@@ -415,6 +415,13 @@ impl ClientHandler {
 
         // Parse the mode data to extract what we need
         if let Some(effect) = self.parse_mode_data(mode_data) {
+            // Direct mode is controlled exclusively via UpdateLEDs/UpdateZoneLEDs.
+            // Applying it here would overwrite per-LED colors with defaults (all black).
+            if effect.mode == RgbMode::Direct {
+                debug!("OpenRGB UpdateMode: mode=Direct (ignored — use UpdateLEDs)");
+                return Ok(());
+            }
+
             let caps = self.rgb.lock().capabilities();
             if let Some(cap) = caps.get(dev_idx as usize) {
                 let device_id = cap.device_id.clone();

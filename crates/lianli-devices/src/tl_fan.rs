@@ -31,6 +31,7 @@ const CMD_SET_MB_RPM_SYNC: u8 = 0xB1;
 
 // Commands — LED control (from decompiled L-Connect 3 LEDCommands.cs)
 const CMD_SET_FAN_LIGHT: u8 = 0xA3;
+const CMD_SET_FAN_GROUP: u8 = 0xAD;
 const CMD_SET_FAN_GROUP_LIGHT: u8 = 0xB0;
 const CMD_SET_FAN_DIRECTION: u8 = 0xAE;
 const CMD_SET_PORT_DIRECTION: u8 = 0xAF;
@@ -104,6 +105,13 @@ impl TlFanController {
                         fan.port, fan.fan_index, fan.rpm
                     );
                 }
+
+                // Set up fan groups so the firmware recognizes all fans for LED control.
+                // Without this, only fan 0 on each port responds to SetFanLight (0xA3).
+                // From decompiled TLFanController.cs: setLightGroup() always precedes setLighting().
+                if let Err(e) = self.setup_fan_groups(&hs.port_fan_counts) {
+                    warn!("  Failed to set up fan groups: {e}");
+                }
             }
             Err(e) => warn!("  Handshake failed: {e}"),
         }
@@ -157,6 +165,38 @@ impl TlFanController {
         };
         *self.last_handshake.lock() = Some(hs.clone());
         Ok(hs)
+    }
+
+    /// Set up fan groups via SetFanGroup (0xAD) so the firmware recognizes all fans
+    /// for per-fan LED control. From decompiled TLFanDevice.cs: SetFanGroup() sends
+    /// group membership before SetFanLight() can address individual fans.
+    ///
+    /// For each port with fans, we register one group containing all fans on that port,
+    /// with both TopSide and BottomSide enabled.
+    /// Group number formula from L-Connect: (port * 4 + groupIndex) * 2 + bottomSide
+    fn setup_fan_groups(&self, port_fan_counts: &[u8; 4]) -> Result<()> {
+        for (port, &fan_count) in port_fan_counts.iter().enumerate() {
+            if fan_count == 0 {
+                continue;
+            }
+
+            // Group number for port P, group 0, top side = (P * 4) * 2
+            let group_number = (port * 4 * 2) as u8;
+
+            // Payload: [groupNum, count, fanParam0, fanParam1, ...]
+            // Each fan param byte: [7]TopSide | [6]BottomSide | [5:4]Port | [3:0]FanIndex
+            let mut data = vec![group_number, fan_count];
+            for fan in 0..fan_count {
+                let param = (1u8 << 7) | (1u8 << 6) | ((port as u8) << 4) | fan;
+                data.push(param);
+            }
+
+            self.send_command_quiet(CMD_SET_FAN_GROUP, &data)?;
+            debug!(
+                "Set fan group {group_number} for port {port}: {fan_count} fans"
+            );
+        }
+        Ok(())
     }
 
     /// Read product/firmware info.
@@ -565,43 +605,46 @@ impl RgbDevice for TlFanController {
     fn zone_info(&self) -> Vec<RgbZoneInfo> {
         let guard = self.last_handshake.lock();
         match guard.as_ref() {
-            Some(hs) => hs
-                .port_fan_counts
-                .iter()
-                .enumerate()
-                .filter(|(_, &count)| count > 0)
-                .map(|(port, &count)| RgbZoneInfo {
-                    name: format!("Port {port}"),
-                    led_count: count as u16 * LEDS_PER_FAN,
-                })
-                .collect(),
+            Some(hs) => {
+                let mut zones = Vec::new();
+                for (port, &count) in hs.port_fan_counts.iter().enumerate() {
+                    for fan in 0..count {
+                        zones.push(RgbZoneInfo {
+                            name: format!("Port {} Fan {}", port, fan + 1),
+                            led_count: LEDS_PER_FAN,
+                        });
+                    }
+                }
+                zones
+            }
             None => vec![],
         }
     }
 
     fn set_zone_effect(&self, zone: u8, effect: &RgbEffect) -> Result<()> {
-        // Zone index maps to port index (only counting active ports)
-        let guard = self.last_handshake.lock();
-        let port = match guard.as_ref() {
-            Some(hs) => {
-                let active_ports: Vec<u8> = hs
-                    .port_fan_counts
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, &count)| count > 0)
-                    .map(|(port, _)| port as u8)
-                    .collect();
-                active_ports
-                    .get(zone as usize)
-                    .copied()
-                    .ok_or_else(|| anyhow::anyhow!("Zone {zone} out of range"))?
+        // Zone index maps to (port, fan_index) across all active ports
+        let (port, fan_index) = {
+            let guard = self.last_handshake.lock();
+            match guard.as_ref() {
+                Some(hs) => {
+                    let mut idx = zone as usize;
+                    let mut found = None;
+                    for (port, &count) in hs.port_fan_counts.iter().enumerate() {
+                        let count = count as usize;
+                        if idx < count {
+                            found = Some((port as u8, idx as u8));
+                            break;
+                        }
+                        idx -= count;
+                    }
+                    found.ok_or_else(|| anyhow::anyhow!("Zone {zone} out of range"))?
+                }
+                None => bail!("No handshake data available"),
             }
-            None => bail!("No handshake data available"),
         };
-        drop(guard);
 
-        // Use group 0 for the port (SetFanGroupLight targets all fans in the group)
-        self.set_group_light(port, effect)
+        // Use SetFanLight (0xA3) per-fan for precise control
+        self.set_fan_light(port, fan_index, effect, false)
     }
 
     fn supports_mb_rgb_sync(&self) -> bool {
