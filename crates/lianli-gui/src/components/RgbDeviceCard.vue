@@ -38,6 +38,23 @@ const directions: { value: RgbDirection; label: string }[] = [
   { value: "Gather", label: "Gather" },
 ];
 
+const hasGroupZones = computed(() =>
+  props.capabilities.supported_scopes?.some((scopes) =>
+    scopes.some((s) => s === "Top" || s === "Bottom")
+  ) ?? false
+);
+
+// Whether the device is currently in synced mode (group light active).
+// All zones share the same effect — only zone 0 is editable.
+const synced = computed(() => {
+  if (!hasGroupZones.value || props.capabilities.zones.length <= 1) return false;
+  const eff = effectFor(0);
+  const isPerFan =
+    ["Static", "Direct", "Off"].includes(eff.mode) &&
+    (!eff.scope || eff.scope === "All");
+  return !isPerFan;
+});
+
 function effectFor(zoneIndex: number): RgbEffect {
   const zone = props.deviceConfig.zones.find(
     (z) => z.zone_index === zoneIndex
@@ -55,7 +72,14 @@ function effectFor(zoneIndex: number): RgbEffect {
 }
 
 function toggleZone(idx: number) {
+  // When synced, only zone 0 is expandable
+  if (synced.value && idx !== 0) return;
   expandedZone.value = expandedZone.value === idx ? null : idx;
+}
+
+function zoneName(idx: number): string {
+  if (synced.value && idx === 0) return "All Fans";
+  return props.capabilities.zones[idx]?.name ?? `Zone ${idx}`;
 }
 
 function updateMode(zoneIndex: number, mode: RgbMode) {
@@ -184,7 +208,7 @@ function rgbToHex(color: [number, number, number]): string {
             MB Sync
           </button>
           <button
-            v-if="expandedZone !== null"
+            v-if="expandedZone !== null && !synced"
             @click="applyToAll"
             class="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
@@ -203,34 +227,44 @@ function rgbToHex(color: [number, number, number]): string {
         v-for="(zone, idx) in capabilities.zones"
         :key="idx"
       >
-        <!-- Zone header (clickable) -->
+        <!-- Zone header -->
         <button
           @click="toggleZone(idx)"
-          class="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+          class="w-full px-4 py-2.5 flex items-center justify-between text-left transition-colors"
+          :class="
+            synced && idx !== 0
+              ? 'opacity-50 cursor-default'
+              : 'hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer'
+          "
         >
           <div class="flex items-center gap-3">
-            <span class="text-sm">{{ zone.name }}</span>
+            <span class="text-sm">{{ zoneName(idx) }}</span>
             <span class="text-xs text-gray-400">{{ zone.led_count }} LEDs</span>
           </div>
           <div class="flex items-center gap-2">
-            <!-- Current color preview -->
-            <div class="flex gap-0.5">
-              <div
-                v-for="(color, ci) in effectFor(idx).colors.slice(0, 4)"
-                :key="ci"
-                class="w-3 h-3 rounded-sm border border-gray-300 dark:border-gray-600"
-                :style="{ backgroundColor: rgbToHex(color) }"
-              />
-            </div>
-            <span class="text-xs text-gray-500">{{
-              RGB_MODE_NAMES[effectFor(idx).mode] ?? effectFor(idx).mode
-            }}</span>
-            <span
-              class="text-gray-400 transition-transform"
-              :class="expandedZone === idx ? 'rotate-90' : ''"
-            >
-              &#9654;
-            </span>
+            <template v-if="synced && idx !== 0">
+              <span class="text-[10px] font-semibold tracking-wider text-amber-500 dark:text-amber-400 uppercase">Synced</span>
+            </template>
+            <template v-else>
+              <!-- Current color preview -->
+              <div class="flex gap-0.5">
+                <div
+                  v-for="(color, ci) in effectFor(idx).colors.slice(0, 4)"
+                  :key="ci"
+                  class="w-3 h-3 rounded-sm border border-gray-300 dark:border-gray-600"
+                  :style="{ backgroundColor: rgbToHex(color) }"
+                />
+              </div>
+              <span class="text-xs text-gray-500">{{
+                RGB_MODE_NAMES[effectFor(idx).mode] ?? effectFor(idx).mode
+              }}</span>
+              <span
+                class="text-gray-400 transition-transform"
+                :class="expandedZone === idx ? 'rotate-90' : ''"
+              >
+                &#9654;
+              </span>
+            </template>
           </div>
         </button>
 

@@ -70,18 +70,16 @@ function handleZoneUpdate(
     cfg.devices.push(devCfg);
   }
 
-  // When group light is used (animated modes or scoped), the hardware applies
-  // the same effect to all fans on the port. Reflect this in the GUI.
-  const isPerFan =
-    ["Static", "Direct", "Off"].includes(effect.mode) &&
-    (!effect.scope || effect.scope === "All");
+  // For devices with group zones (e.g. TL Fan), zone 0 acts as "All Fans":
+  // - Animated/scoped modes use group light (syncs all fans in hardware)
+  // - Breaking sync (switching to Static/Off) from zone 0 also applies to all
   const cap = capsFor(deviceId);
   const hasGroupZones =
     cap?.supported_scopes?.some((scopes) =>
       scopes.some((s) => s === "Top" || s === "Bottom")
     ) ?? false;
   const zonesToUpdate =
-    !isPerFan && hasGroupZones && cap
+    hasGroupZones && cap && zoneIndex === 0
       ? cap.zones.map((_: unknown, i: number) => i)
       : [zoneIndex];
 
@@ -306,7 +304,7 @@ watch(() => deviceStore.daemonConnected, (connected) => {
           <li>Click Connect &mdash; your Lian Li devices will appear as devices</li>
         </ol>
         <p class="text-xs text-gray-400 mt-2">
-          While OpenRGB SDK Server is enabled, effects set here will have no effect.
+          While OpenRGB SDK Server is enabled, effects set here will have no effect on daemon startup.
         </p>
       </div>
     </div>
