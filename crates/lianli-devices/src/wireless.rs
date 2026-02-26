@@ -454,12 +454,17 @@ impl WirelessController {
         let discovered_devices = Arc::clone(&self.discovered_devices);
 
         self.poll_thread = Some(thread::spawn(move || {
+            let mut found_devices = false;
             while !stop_flag.load(Ordering::SeqCst) {
                 if let Err(err) = poll_and_discover(&rx, &discovered_devices) {
                     warn!("RX polling error: {err:?}");
                     break;
                 }
-                thread::sleep(Duration::from_millis(500));
+                if !found_devices && !discovered_devices.lock().is_empty() {
+                    found_devices = true;
+                }
+                let interval = if found_devices { 5000 } else { 500 };
+                thread::sleep(Duration::from_millis(interval));
             }
         }));
 
@@ -669,22 +674,65 @@ impl WirelessController {
         self.set_fan_speeds_by_mac(&mac, fan_pwm)
     }
 
-    /// Send per-LED RGB colors to a wireless device via RF.
+    /// Send a single frame of per-LED RGB colors to a wireless device.
     ///
-    /// This is the core function for wireless LED control. All effects are
-    /// host-rendered — the fan firmware just displays the received frames.
-    ///
-    /// ## Protocol (from L-Connect 3 MasterDevice.cs SetLightEffect):
-    ///
-    /// 1. Raw RGB data (`colors`) is compressed using tinyuz (4KB dict).
-    /// 2. Compressed data is split into 220-byte chunks.
-    /// 3. Header packet (index=0) carries metadata, sent 4× for reliability.
-    /// 4. Data packets (index=1..N) carry 220 bytes of compressed data each.
-    /// 5. Each 240-byte RF packet is sent as 4× 64-byte USB packets.
+    /// Wrapper around `send_rgb_frames` for single-frame (static/direct) use.
     pub fn send_rgb_direct(
         &self,
         mac: &[u8; 6],
         colors: &[[u8; 3]],
+        effect_index: &[u8; 4],
+        header_repeats: u8,
+    ) -> Result<()> {
+        let led_num = colors.len() as u8;
+        let mut raw_rgb = Vec::with_capacity(colors.len() * 3);
+        for color in colors {
+            raw_rgb.extend_from_slice(color);
+        }
+        self.send_rgb_payload(mac, &raw_rgb, led_num, 1, 5000, effect_index, header_repeats)
+    }
+
+    /// Send a multi-frame animation to a wireless device.
+    ///
+    /// Firmware stores the compressed blob and loops all frames at `interval_ms`.
+    /// Used for batched OpenRGB streaming — collect N frames, send once, let
+    /// firmware play them back smoothly with zero host involvement.
+    pub fn send_rgb_frames(
+        &self,
+        mac: &[u8; 6],
+        frames: &[Vec<[u8; 3]>],
+        interval_ms: u16,
+        effect_index: &[u8; 4],
+        header_repeats: u8,
+    ) -> Result<()> {
+        if frames.is_empty() {
+            return Ok(());
+        }
+        let led_num = frames[0].len() as u8;
+        let total_frames = frames.len() as u16;
+
+        let mut raw_rgb = Vec::with_capacity(frames.len() * led_num as usize * 3);
+        for frame in frames {
+            for color in frame {
+                raw_rgb.extend_from_slice(color);
+            }
+        }
+
+        self.send_rgb_payload(mac, &raw_rgb, led_num, total_frames, interval_ms, effect_index, header_repeats)
+    }
+
+    /// Core RF RGB payload sender.
+    ///
+    /// Compresses raw RGB data, splits into 220-byte chunks, and sends via RF.
+    /// Header packet (index=0) carries metadata and is repeated for reliability.
+    /// Data packets (index=1..N) carry compressed data chunks.
+    fn send_rgb_payload(
+        &self,
+        mac: &[u8; 6],
+        raw_rgb: &[u8],
+        led_num: u8,
+        total_frames: u16,
+        interval_ms: u16,
         effect_index: &[u8; 4],
         header_repeats: u8,
     ) -> Result<()> {
@@ -700,30 +748,23 @@ impl WirelessController {
 
         let master_mac = *self.master_mac.lock();
 
-        // Flatten RGB triplets into a raw byte array
-        let mut rgb_data = Vec::with_capacity(colors.len() * 3);
-        for color in colors {
-            rgb_data.extend_from_slice(color);
-        }
-
-        // Compress with tinyuz
-        let compressed = crate::tinyuz::compress(&rgb_data)
+        let compressed = crate::tinyuz::compress(raw_rgb)
             .context("failed to compress RGB data")?;
 
         const LZO_RF_VALID_LEN: usize = 220;
         let total_pk_num =
             (compressed.len() as f64 / LZO_RF_VALID_LEN as f64).ceil() as u8;
 
-        let led_num = colors.len() as u8;
-        let total_frame: u16 = 1; // Single frame for direct color mode
-
         let mut offset: usize = 0;
         let mut index: u8 = 0;
+
+        // Hold TX lock for the entire transfer to prevent interleaving
+        // with PWM or other TX operations.
+        let handle = tx.lock();
 
         while offset < compressed.len() || index == 0 {
             let mut rf_data = vec![0u8; RF_DATA_SIZE];
 
-            // Common header for all packets
             rf_data[0] = RF_SELECT;
             rf_data[1] = RF_SET_RGB;
             rf_data[2..8].copy_from_slice(&device.mac);
@@ -733,54 +774,46 @@ impl WirelessController {
             rf_data[19] = total_pk_num + 1;
 
             if index == 0 {
-                // Header packet: metadata only, no compressed data
+                // Header packet: metadata
                 let data_len = compressed.len() as u32;
                 rf_data[20] = (data_len >> 24) as u8;
                 rf_data[21] = ((data_len >> 16) & 0xFF) as u8;
                 rf_data[22] = ((data_len >> 8) & 0xFF) as u8;
                 rf_data[23] = (data_len & 0xFF) as u8;
-                rf_data[24] = 0; // Frame count high byte (always 0 for single frame)
-                rf_data[25] = (total_frame >> 8) as u8;
-                rf_data[26] = (total_frame & 0xFF) as u8;
+                rf_data[24] = 0;
+                rf_data[25] = (total_frames >> 8) as u8;
+                rf_data[26] = (total_frames & 0xFF) as u8;
                 rf_data[27] = led_num;
-                // Bytes 28-31: reserved/timing
-                // Bytes 32-33: interval (0 for direct mode)
-                // Bytes 34-39: sub-interval / flags
+                rf_data[32] = (interval_ms >> 8) as u8;
+                rf_data[33] = (interval_ms & 0xFF) as u8;
 
-                // Send header packet N times for reliability.
-                // Native config (one-shot): 4× with 20ms gaps.
-                // OpenRGB streaming: 1× (next frame arrives in ~33ms anyway).
                 let repeats = header_repeats.max(1);
-                let handle = tx.lock();
+                let gap_ms = if repeats <= 2 { 2 } else { 20 };
                 for repeat in 0..repeats {
                     self.send_rf_packet(&handle, &device, &rf_data)?;
                     if repeat < repeats - 1 {
-                        thread::sleep(Duration::from_millis(20));
+                        thread::sleep(Duration::from_millis(gap_ms));
                     }
                 }
-                drop(handle);
             } else {
-                // Data packet: 220 bytes of compressed data at offset 20
+                // Data packet: 220 bytes of compressed data
                 let remaining = compressed.len() - offset;
                 let chunk_len = remaining.min(LZO_RF_VALID_LEN);
                 rf_data[20..20 + chunk_len]
                     .copy_from_slice(&compressed[offset..offset + chunk_len]);
                 offset += LZO_RF_VALID_LEN;
 
-                let handle = tx.lock();
                 self.send_rf_packet(&handle, &device, &rf_data)?;
-                drop(handle);
             }
 
             index += 1;
         }
 
+        drop(handle);
+
         debug!(
-            "Sent RGB frame to {} ({} LEDs, {} compressed bytes, {} packets)",
-            device.mac_str(),
-            led_num,
-            compressed.len(),
-            index
+            "Sent RGB to {} ({} frame(s), {} LEDs, {} compressed, {} packets, {}ms interval)",
+            device.mac_str(), total_frames, led_num, compressed.len(), index, interval_ms
         );
         Ok(())
     }

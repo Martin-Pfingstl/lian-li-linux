@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 /// Tracks a wireless device's RGB state for `send_rgb_direct`.
@@ -206,7 +206,7 @@ impl RgbController {
 
             state.effect_counter = state.effect_counter.wrapping_add(1);
             let idx = state.effect_counter.to_be_bytes();
-            wireless.send_rgb_direct(&state.mac, &state.led_state, &idx, 1)?;
+            wireless.send_rgb_direct(&state.mac, &state.led_state, &idx, 2)?;
             return Ok(());
         }
 
@@ -297,6 +297,11 @@ impl RgbController {
         }
     }
 
+    /// Check if a device_id refers to a wireless device.
+    pub fn is_wireless(&self, device_id: &str) -> bool {
+        self.wireless_state.contains_key(device_id)
+    }
+
     /// Refresh wireless device list (call after rediscovery / hot-plug).
     #[allow(dead_code)]
     pub fn refresh_wireless_devices(&mut self) {
@@ -372,43 +377,65 @@ impl DirectColorBuffer {
     }
 }
 
-/// Spawns a background thread that flushes buffered direct colors at ~30fps.
+/// Spawns a background thread that flushes buffered direct colors.
 ///
-/// This decouples the OpenRGB TCP reader from device I/O, preventing backlog.
-/// Intermediate frames are dropped — only the latest color state per device is sent.
+/// Wired devices are processed first for lowest latency.
+/// Wireless devices use single-frame direct sends.
 pub fn start_direct_color_writer(
     rgb: Arc<Mutex<RgbController>>,
     buffer: Arc<Mutex<DirectColorBuffer>>,
     stop_flag: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        let tick = Duration::from_millis(33); // ~30fps
-        debug!("Direct color writer started (30fps)");
+        debug!("Direct color writer started");
 
         loop {
             if stop_flag.load(Ordering::Relaxed) {
                 break;
             }
 
-            let start = Instant::now();
-
-            // Take all pending updates atomically
             let updates = buffer.lock().take_all();
 
             if !updates.is_empty() {
-                let mut rgb = rgb.lock();
-                for (device_id, zones) in updates {
-                    for (zone, colors) in zones {
-                        if let Err(e) = rgb.set_direct_colors(&device_id, zone, &colors) {
-                            debug!("Direct color flush error for {device_id} zone {zone}: {e}");
+                // Split into wired and wireless so wired always goes first
+                let mut wired = Vec::new();
+                let mut wireless = Vec::new();
+                {
+                    let rgb = rgb.lock();
+                    for (device_id, zones) in updates {
+                        if rgb.is_wireless(&device_id) {
+                            wireless.push((device_id, zones));
+                        } else {
+                            wired.push((device_id, zones));
                         }
                     }
                 }
-            }
 
-            let elapsed = start.elapsed();
-            if elapsed < tick {
-                thread::sleep(tick - elapsed);
+                // Wired: flush immediately with minimal lock time
+                if !wired.is_empty() {
+                    let mut rgb = rgb.lock();
+                    for (device_id, zones) in wired {
+                        for (zone, colors) in zones {
+                            if let Err(e) = rgb.set_direct_colors(&device_id, zone, &colors) {
+                                debug!("Wired flush error for {device_id} zone {zone}: {e}");
+                            }
+                        }
+                    }
+                }
+
+                // Wireless: send latest color state per device
+                if !wireless.is_empty() {
+                    let mut rgb = rgb.lock();
+                    for (device_id, zones) in wireless {
+                        for (zone, colors) in zones {
+                            if let Err(e) = rgb.set_direct_colors(&device_id, zone, &colors) {
+                                debug!("Wireless flush error for {device_id} zone {zone}: {e}");
+                            }
+                        }
+                    }
+                }
+            } else {
+                thread::sleep(Duration::from_millis(5));
             }
         }
 

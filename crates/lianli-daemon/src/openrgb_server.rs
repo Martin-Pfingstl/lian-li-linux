@@ -180,6 +180,9 @@ struct ClientHandler {
     stop_flag: Arc<AtomicBool>,
     protocol_version: u32,
     client_name: String,
+    /// Cached capabilities — avoids locking RgbController on every UpdateLEDs packet.
+    /// Populated lazily on first use; static for the lifetime of a connection.
+    cached_caps: Option<Vec<RgbDeviceCapabilities>>,
 }
 
 impl ClientHandler {
@@ -196,7 +199,21 @@ impl ClientHandler {
             stop_flag,
             protocol_version: 0,
             client_name: String::new(),
+            cached_caps: None,
         }
+    }
+
+    /// Get capabilities, caching on first call to avoid mutex contention during streaming.
+    fn caps(&mut self) -> &[RgbDeviceCapabilities] {
+        if self.cached_caps.is_none() {
+            self.cached_caps = Some(self.rgb.lock().capabilities());
+        }
+        self.cached_caps.as_ref().unwrap()
+    }
+
+    /// Force-refresh the cached capabilities (e.g., after mode changes).
+    fn refresh_caps(&mut self) {
+        self.cached_caps = Some(self.rgb.lock().capabilities());
     }
 
     fn run(&mut self) -> anyhow::Result<()> {
@@ -277,15 +294,15 @@ impl ClientHandler {
             }
 
             PKT_REQUEST_CONTROLLER_COUNT => {
-                let caps = self.rgb.lock().capabilities();
-                let count = caps.len() as u32;
+                self.refresh_caps();
+                let count = self.caps().len() as u32;
                 self.send_packet(0, PKT_REQUEST_CONTROLLER_COUNT, &count.to_le_bytes())?;
             }
 
             PKT_REQUEST_CONTROLLER_DATA => {
-                let caps = self.rgb.lock().capabilities();
-                if let Some(cap) = caps.get(dev_idx as usize) {
-                    let data = self.build_controller_data(cap);
+                let cap = self.caps().get(dev_idx as usize).cloned();
+                if let Some(cap) = cap {
+                    let data = self.build_controller_data(&cap);
                     self.send_packet(dev_idx, PKT_REQUEST_CONTROLLER_DATA, &data)?;
                 } else {
                     // Empty response for invalid index
@@ -341,14 +358,14 @@ impl ClientHandler {
         let num_colors = u16::from_le_bytes(payload[4..6].try_into()?) as usize;
         let colors = parse_colors(&payload[6..], num_colors);
 
-        let caps = self.rgb.lock().capabilities();
-        if let Some(cap) = caps.get(dev_idx as usize) {
+        // Use cached caps — no RgbController lock needed in the hot path
+        if let Some(cap) = self.caps().get(dev_idx as usize) {
             let device_id = cap.device_id.clone();
-            // Buffer colors per zone — writer thread will flush at 30fps
+            let zones: Vec<_> = cap.zones.iter().map(|z| z.led_count as usize).collect();
+            // Buffer colors per zone — writer thread will flush asap
             let mut buf = self.direct_buffer.lock();
             let mut offset = 0;
-            for (zone_idx, zone) in cap.zones.iter().enumerate() {
-                let count = zone.led_count as usize;
+            for (zone_idx, count) in zones.iter().enumerate() {
                 let end = (offset + count).min(colors.len());
                 if offset < colors.len() {
                     buf.set(device_id.clone(), zone_idx as u8, colors[offset..end].to_vec());
@@ -370,8 +387,7 @@ impl ClientHandler {
         let num_colors = u16::from_le_bytes(payload[8..10].try_into()?) as usize;
         let colors = parse_colors(&payload[10..], num_colors);
 
-        let caps = self.rgb.lock().capabilities();
-        if let Some(cap) = caps.get(dev_idx as usize) {
+        if let Some(cap) = self.caps().get(dev_idx as usize) {
             let device_id = cap.device_id.clone();
             self.direct_buffer.lock().set(device_id, zone_idx, colors);
         }
@@ -390,13 +406,11 @@ impl ClientHandler {
         let g = payload[5];
         let b = payload[6];
 
-        let caps = self.rgb.lock().capabilities();
-        if let Some(cap) = caps.get(dev_idx as usize) {
+        if let Some(cap) = self.caps().get(dev_idx as usize) {
             let device_id = cap.device_id.clone();
-            // Find which zone this LED belongs to
+            let zones: Vec<_> = cap.zones.iter().map(|z| z.led_count as usize).collect();
             let mut offset = 0;
-            for (zone_idx, zone) in cap.zones.iter().enumerate() {
-                let count = zone.led_count as usize;
+            for (zone_idx, count) in zones.iter().enumerate() {
                 if led_idx < offset + count {
                     let colors = vec![[r, g, b]];
                     self.direct_buffer.lock().set(device_id, zone_idx as u8, colors);
@@ -427,6 +441,7 @@ impl ClientHandler {
                 return Ok(());
             }
 
+            // UpdateMode is rare (not streaming hot path), so lock is fine here
             let caps = self.rgb.lock().capabilities();
             if let Some(cap) = caps.get(dev_idx as usize) {
                 let device_id = cap.device_id.clone();
@@ -434,7 +449,6 @@ impl ClientHandler {
                     "OpenRGB UpdateMode: device={device_id} mode_idx={mode_idx} -> {:?}",
                     effect.mode
                 );
-                // Apply to all zones
                 for zone_idx in 0..cap.zones.len() {
                     if let Err(e) = self
                         .rgb

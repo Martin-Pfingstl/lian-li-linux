@@ -29,6 +29,9 @@ use tracing::{debug, info, warn};
 
 const CONFIG_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
+/// Full USB bus enumeration interval — only needed for hot-plug detection of
+/// wired USB devices (LCD, AIO, etc.). Wireless discovery uses its own RX polling.
+const USB_ENUM_INTERVAL: Duration = Duration::from_secs(10);
 const ACTIVE_SLEEP: Duration = Duration::from_millis(1);
 const IDLE_SLEEP: Duration = Duration::from_millis(200);
 
@@ -47,6 +50,9 @@ pub struct ServiceManager {
     wired_fan_devices: Arc<HashMap<String, Box<dyn FanDevice>>>,
     last_config_check: Instant,
     last_device_scan: Instant,
+    last_usb_enum: Instant,
+    /// Cached USB device list from enumerate_devices() — refreshed every USB_ENUM_INTERVAL.
+    cached_usb_devices: Vec<DeviceInfo>,
     running: bool,
     ipc_state: Arc<Mutex<DaemonState>>,
     ipc_stop: Arc<AtomicBool>,
@@ -75,6 +81,8 @@ impl ServiceManager {
             wired_fan_devices: Arc::new(HashMap::new()),
             last_config_check: Instant::now() - CONFIG_POLL_INTERVAL,
             last_device_scan: Instant::now() - DEVICE_POLL_INTERVAL,
+            last_usb_enum: Instant::now() - USB_ENUM_INTERVAL,
+            cached_usb_devices: Vec::new(),
             running: true,
             ipc_state,
             ipc_stop: Arc::new(AtomicBool::new(false)),
@@ -164,6 +172,12 @@ impl ServiceManager {
             if now.duration_since(self.last_device_scan) >= DEVICE_POLL_INTERVAL {
                 self.last_device_scan = Instant::now();
                 self.refresh_targets();
+                // Refresh USB device enumeration at a slower rate (hot-plug detection).
+                // Wireless discovery is handled by its own RX polling thread.
+                if now.duration_since(self.last_usb_enum) >= USB_ENUM_INTERVAL {
+                    self.last_usb_enum = Instant::now();
+                    self.refresh_usb_device_cache();
+                }
                 self.sync_ipc_telemetry();
             }
 
@@ -184,6 +198,53 @@ impl ServiceManager {
     fn sync_ipc_state(&self) {
         let mut ipc_state = self.ipc_state.lock();
         ipc_state.config = self.config.clone();
+    }
+
+    /// Refresh the cached USB device list (full bus enumeration).
+    fn refresh_usb_device_cache(&mut self) {
+        match enumerate_devices() {
+            Ok(usb_devices) => {
+                let mut cached = Vec::new();
+                for det in usb_devices {
+                    // Skip wireless dongles and fan-only devices (handled separately)
+                    if matches!(
+                        det.family,
+                        lianli_shared::device_id::DeviceFamily::WirelessTx
+                            | lianli_shared::device_id::DeviceFamily::WirelessRx
+                            | lianli_shared::device_id::DeviceFamily::DisplaySwitcher
+                            | lianli_shared::device_id::DeviceFamily::TlFan
+                            | lianli_shared::device_id::DeviceFamily::Ene6k77
+                    ) {
+                        continue;
+                    }
+                    let screen = screen_info_for(det.family);
+                    let device_id = det
+                        .serial
+                        .clone()
+                        .unwrap_or_else(|| format!("usb:{}:{}", det.bus, det.address));
+                    cached.push(DeviceInfo {
+                        device_id,
+                        family: det.family,
+                        name: det.name.to_string(),
+                        serial: det.serial,
+                        has_lcd: det.family.has_lcd(),
+                        has_fan: det.family.has_fan(),
+                        has_pump: det.family.has_pump(),
+                        has_rgb: det.family.has_rgb(),
+                        fan_count: None,
+                        per_fan_control: None,
+                        mb_sync_support: false,
+                        rgb_zone_count: None,
+                        screen_width: screen.map(|s| s.width),
+                        screen_height: screen.map(|s| s.height),
+                    });
+                }
+                self.cached_usb_devices = cached;
+            }
+            Err(e) => {
+                warn!("USB enumeration failed: {e}");
+            }
+        }
     }
 
     /// Update IPC telemetry and device list.
@@ -277,43 +338,10 @@ impl ServiceManager {
             }
         }
 
-        // Add other wired USB devices (LCD, etc.)
-        if let Ok(usb_devices) = enumerate_devices() {
-            for det in usb_devices {
-                // Skip wireless dongles and fan-only devices (already covered above)
-                if matches!(
-                    det.family,
-                    lianli_shared::device_id::DeviceFamily::WirelessTx
-                        | lianli_shared::device_id::DeviceFamily::WirelessRx
-                        | lianli_shared::device_id::DeviceFamily::DisplaySwitcher
-                        | lianli_shared::device_id::DeviceFamily::TlFan
-                        | lianli_shared::device_id::DeviceFamily::Ene6k77
-                ) {
-                    continue;
-                }
-                let screen = screen_info_for(det.family);
-                let device_id = det
-                    .serial
-                    .clone()
-                    .unwrap_or_else(|| format!("usb:{}:{}", det.bus, det.address));
-                devices.push(DeviceInfo {
-                    device_id,
-                    family: det.family,
-                    name: det.name.to_string(),
-                    serial: det.serial,
-                    has_lcd: det.family.has_lcd(),
-                    has_fan: det.family.has_fan(),
-                    has_pump: det.family.has_pump(),
-                    has_rgb: det.family.has_rgb(),
-                    fan_count: None,
-                    per_fan_control: None,
-                    mb_sync_support: false,
-                    rgb_zone_count: None,
-                    screen_width: screen.map(|s| s.width),
-                    screen_height: screen.map(|s| s.height),
-                });
-            }
-        }
+        // Add other wired USB devices (LCD, etc.) from cache.
+        // Cache is refreshed every USB_ENUM_INTERVAL (30s) to avoid
+        // USB bus contention from opening every device for serial reads.
+        devices.extend(self.cached_usb_devices.clone());
 
         ipc_state.devices = devices;
     }
