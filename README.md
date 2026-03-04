@@ -85,10 +85,10 @@ git clone --recurse-submodules https://github.com/sgtaziz/lian-li-linux.git && c
 sudo pacman -S hidapi libusb ffmpeg
 
 # Ubuntu / Debian
-sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev ffmpeg
+sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev ffmpeg
 
 # Fedora
-sudo dnf install hidapi-devel libusb1-devel ffmpeg
+sudo dnf install hidapi-devel libusb1-devel fontconfig-devel ffmpeg
 ```
 
 3) build the project

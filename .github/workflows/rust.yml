@@ -26,6 +26,7 @@ jobs:
           libhidapi-dev \
           libudev-dev \
           libusb-1.0-0-dev \
+          libfontconfig-dev \
           pkg-config
 
     - name: Build

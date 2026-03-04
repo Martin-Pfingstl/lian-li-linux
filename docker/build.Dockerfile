@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     clang cmake ninja-build \
     libssl-dev \
-    libhidapi-dev libusb-1.0-0-dev libudev-dev \
+    libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
     ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
