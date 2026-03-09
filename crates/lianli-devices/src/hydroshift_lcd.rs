@@ -178,6 +178,8 @@ impl HydroShiftLcdController {
             Err(e) => warn!("  Handshake failed: {e}"),
         }
 
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
         Ok(())
     }
 
@@ -402,7 +404,7 @@ impl LcdDevice for HydroShiftLcdController {
 
     fn set_brightness(&self, brightness: u8) -> Result<()> {
         let mut payload = [0u8; 8];
-        payload[0] = LcdControlMode::Application as u8;
+        payload[0] = LcdControlMode::LcdSetting as u8;
         payload[1] = brightness.min(100);
         payload[2] = self.rotation as u8;
         payload[7] = 24;
@@ -413,7 +415,7 @@ impl LcdDevice for HydroShiftLcdController {
     fn set_rotation(&self, degrees: u16) -> Result<()> {
         let rotation = ScreenRotation::from_degrees(degrees);
         let mut payload = [0u8; 8];
-        payload[0] = LcdControlMode::Application as u8;
+        payload[0] = LcdControlMode::LcdSetting as u8;
         payload[1] = self.brightness;
         payload[2] = rotation as u8;
         payload[7] = 24;
