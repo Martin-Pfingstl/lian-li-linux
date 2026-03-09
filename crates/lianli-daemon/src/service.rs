@@ -5,7 +5,7 @@ use crate::rgb_controller::RgbController;
 use anyhow::Result;
 use lianli_devices::crypto::PacketBuilder;
 use lianli_devices::detect::{
-    enumerate_devices, enumerate_hid_devices, open_fan_device, open_rgb_devices, DetectedDevice,
+    enumerate_devices, enumerate_hid_devices, open_fan_device, open_rgb_devices,
 };
 use lianli_devices::hydroshift_lcd::HydroShiftLcdController;
 use lianli_devices::slv3_lcd::Slv3LcdDevice;
@@ -631,7 +631,7 @@ impl ServiceManager {
 
         // Build a serial to ScreenInfo map from currently connected devices so each
         // LCD gets its correct native resolution (e.g., H2 = 480×480, not 400×400).
-        let screen_map: HashMap<String, ScreenInfo> = enumerate_devices()
+        let mut screen_map: HashMap<String, ScreenInfo> = enumerate_devices()
             .unwrap_or_default()
             .into_iter()
             .filter_map(|det| {
@@ -640,6 +640,16 @@ impl ServiceManager {
                 Some((serial, screen))
             })
             .collect();
+
+        // Augment with HID LCD devices — hidapi can read serials that rusb cannot
+        // (e.g. HydroShift LCD AIO, Galahad2 LCD).
+        if let Ok(api) = hidapi::HidApi::new() {
+            for det in enumerate_hid_devices(&api) {
+                if let (Some(serial), Some(screen)) = (&det.serial, screen_info_for(det.family)) {
+                    screen_map.entry(serial.clone()).or_insert(screen);
+                }
+            }
+        }
 
         if let Some(cfg) = &self.config {
             for (idx, device) in cfg.lcds.iter().enumerate() {
@@ -677,7 +687,8 @@ impl ServiceManager {
             return;
         }
 
-        const LCD_FAMILIES: &[DeviceFamily] = &[
+        // USB bulk LCD families
+        const USB_LCD_FAMILIES: &[DeviceFamily] = &[
             DeviceFamily::Slv3Lcd,
             DeviceFamily::Tlv2Lcd,
             DeviceFamily::HydroShift2Lcd,
@@ -685,26 +696,63 @@ impl ServiceManager {
             DeviceFamily::UniversalScreen,
         ];
 
-        let all_detected = match enumerate_devices() {
-            Ok(devs) => devs,
-            Err(err) => {
-                warn!("failed to enumerate LCD devices: {err}");
-                return;
-            }
-        };
+        // HID LCD families (serial comes from hidapi, not rusb)
+        const HID_LCD_FAMILIES: &[DeviceFamily] = &[
+            DeviceFamily::HydroShiftLcd,
+            DeviceFamily::Galahad2Lcd,
+        ];
 
-        // Filter to LCD families; serial is already resolved by enumerate_devices().
-        let device_info: Vec<(DetectedDevice, String)> = all_detected
-            .into_iter()
-            .filter(|d| LCD_FAMILIES.contains(&d.family))
-            .map(|d| {
-                let serial = d
+        // Unified LCD candidate — can originate from either USB bulk or HID enumeration.
+        struct LcdCandidate {
+            family: DeviceFamily,
+            serial: String,
+            usb_device: Option<Device<rusb::GlobalContext>>,
+            hid_path: Option<std::ffi::CString>,
+            pid: u16,
+        }
+
+        let mut candidates: Vec<LcdCandidate> = Vec::new();
+
+        // USB bulk devices
+        if let Ok(usb_devs) = enumerate_devices() {
+            for det in usb_devs {
+                if !USB_LCD_FAMILIES.contains(&det.family) {
+                    continue;
+                }
+                let serial = det
                     .serial
                     .clone()
-                    .unwrap_or_else(|| format!("bus{}-addr{}", d.bus, d.address));
-                (d, serial)
-            })
-            .collect();
+                    .unwrap_or_else(|| format!("bus{}-addr{}", det.bus, det.address));
+                candidates.push(LcdCandidate {
+                    family: det.family,
+                    serial,
+                    usb_device: Some(det.device),
+                    hid_path: None,
+                    pid: det.pid,
+                });
+            }
+        }
+
+        // HID LCD devices (hidapi can read serials that rusb cannot)
+        let hid_api = hidapi::HidApi::new().ok();
+        if let Some(ref api) = hid_api {
+            for det in enumerate_hid_devices(api) {
+                if !HID_LCD_FAMILIES.contains(&det.family) {
+                    continue;
+                }
+                let serial = det
+                    .serial
+                    .clone()
+                    .unwrap_or_else(|| det.device_id());
+                candidates.push(LcdCandidate {
+                    family: det.family,
+                    serial,
+                    usb_device: None,
+                    hid_path: Some(det.path.clone()),
+                    pid: det.pid,
+                });
+            }
+        }
 
         let mut new_targets = HashMap::new();
 
@@ -721,15 +769,15 @@ impl ServiceManager {
                 };
 
                 let matched = if let Some(serial) = &device_cfg.serial {
-                    device_info.iter().find(|(_, s)| s == serial)
+                    candidates.iter().find(|c| &c.serial == serial)
                 } else if let Some(index) = device_cfg.index {
-                    device_info.get(index)
+                    candidates.get(index)
                 } else {
                     None
                 };
 
-                let (det, serial) = match matched {
-                    Some(pair) => pair,
+                let candidate = match matched {
+                    Some(c) => c,
                     None => {
                         if let Some(mut existing) = self.targets.remove(&cfg_idx) {
                             info!("[devices] LCD[{}] detached", device_cfg.device_id());
@@ -741,7 +789,7 @@ impl ServiceManager {
 
                 let cfg_key = config_identity(device_cfg);
                 if let Some(mut existing) = self.targets.remove(&cfg_idx) {
-                    if existing.matches(&serial, &cfg_key) {
+                    if existing.matches(&candidate.serial, &cfg_key) {
                         new_targets.insert(cfg_idx, existing);
                         continue;
                     } else {
@@ -750,21 +798,34 @@ impl ServiceManager {
                 }
 
                 // Open as the appropriate backend for this device family.
-                let device = Device::clone(&det.device);
-                let backend_result: anyhow::Result<LcdBackend> = match det.family {
-                    DeviceFamily::Slv3Lcd | DeviceFamily::Tlv2Lcd => {
-                        Slv3LcdDevice::new(device).map(LcdBackend::Slv3)
+                let backend_result: anyhow::Result<LcdBackend> = if let Some(ref usb_dev) = candidate.usb_device {
+                    let device = Device::clone(usb_dev);
+                    match candidate.family {
+                        DeviceFamily::Slv3Lcd | DeviceFamily::Tlv2Lcd => {
+                            Slv3LcdDevice::new(device).map(LcdBackend::Slv3)
+                        }
+                        DeviceFamily::HydroShift2Lcd => {
+                            lianli_devices::hydroshift2_lcd::open(device).map(LcdBackend::WinUsb)
+                        }
+                        DeviceFamily::Lancool207 => {
+                            lianli_devices::lancool207::open(device).map(LcdBackend::WinUsb)
+                        }
+                        DeviceFamily::UniversalScreen => {
+                            lianli_devices::universal_screen::open(device).map(LcdBackend::WinUsb)
+                        }
+                        _ => unreachable!(),
                     }
-                    DeviceFamily::HydroShift2Lcd => {
-                        lianli_devices::hydroshift2_lcd::open(device).map(LcdBackend::WinUsb)
-                    }
-                    DeviceFamily::Lancool207 => {
-                        lianli_devices::lancool207::open(device).map(LcdBackend::WinUsb)
-                    }
-                    DeviceFamily::UniversalScreen => {
-                        lianli_devices::universal_screen::open(device).map(LcdBackend::WinUsb)
-                    }
-                    _ => unreachable!(),
+                } else if let Some(ref hid_path) = candidate.hid_path {
+                    // HID LCD device — open via hidapi
+                    let api = hid_api.as_ref().unwrap();
+                    api.open_path(hid_path)
+                        .map_err(|e| anyhow::anyhow!("HID open for LCD: {e}"))
+                        .and_then(|hid_dev| {
+                            HydroShiftLcdController::new(hid_dev, candidate.pid)
+                        })
+                        .map(LcdBackend::HidLcd)
+                } else {
+                    unreachable!()
                 };
 
                 match backend_result {
@@ -772,10 +833,10 @@ impl ServiceManager {
                         info!(
                             "[devices] LCD[{}] attached (serial: {}, orientation: {:.0}°)",
                             device_cfg.device_id(),
-                            serial,
+                            candidate.serial,
                             device_cfg.orientation
                         );
-                        let target = ActiveTarget::new(cfg_idx, cfg_key, serial.clone(), lcd, asset);
+                        let target = ActiveTarget::new(cfg_idx, cfg_key, candidate.serial.clone(), lcd, asset);
                         new_targets.insert(cfg_idx, target);
                     }
                     Err(err) => {
