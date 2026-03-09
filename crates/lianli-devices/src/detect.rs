@@ -77,8 +77,8 @@ pub fn enumerate_devices() -> Result<Vec<DetectedDevice>> {
                 .and_then(|h| h.read_serial_number_string_ascii(&desc).ok());
 
             debug!(
-                "Found {} ({:04x}:{:04x}) at bus {} addr {} serial {:?}",
-                entry.name, vid, pid, bus, address, serial
+                "Found {} ({:04x}:{:04x}) at bus {} addr {} serial={}",
+                entry.name, vid, pid, bus, address, serial.as_deref().unwrap_or("none")
             );
 
             found.push(DetectedDevice {

@@ -135,7 +135,7 @@ fn fan_control_thread(
             }
         }
         if is_mb_sync {
-            debug!("Group {group_idx} ({:?}): MB RPM sync mode", group.device_id);
+            debug!("Group {group_idx} ({}): MB RPM sync mode", group.device_id.as_deref().unwrap_or("none"));
         }
     }
 
