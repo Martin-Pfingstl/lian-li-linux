@@ -275,7 +275,7 @@ pub fn open_rgb_devices(
                 Err(e) => return Some(Err(anyhow::anyhow!("HID open for RGB: {e}"))),
             };
             Some(
-                crate::hydroshift_lcd::AioLcdRgbController::new(hid_dev, det.pid)
+                crate::hydroshift_lcd::AioLcdRgbController::new(crate::hydroshift_lcd::HidBackend::Hidapi(hid_dev), det.pid)
                     .map(|c| vec![(String::new(), Box::new(c) as Box<dyn crate::traits::RgbDevice>)]),
             )
         }
@@ -297,7 +297,7 @@ pub fn open_hid_lcd_device(
                 Ok(d) => d,
                 Err(e) => return Some(Err(anyhow::anyhow!("HID open for LCD: {e}"))),
             };
-            Some(crate::hydroshift_lcd::HydroShiftLcdController::new(hid_dev, det.pid))
+            Some(crate::hydroshift_lcd::HydroShiftLcdController::new(crate::hydroshift_lcd::HidBackend::Hidapi(hid_dev), det.pid))
         }
         _ => None,
     }

@@ -797,13 +797,15 @@ impl ServiceManager {
                         lianli_devices::universal_screen::open(device).map(LcdBackend::WinUsb)
                     }
                     DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => {
-                        hidapi::HidApi::new()
-                            .map_err(|e| anyhow::anyhow!("hidapi init: {e}"))
-                            .and_then(|api| {
-                                api.open(candidate.vid, candidate.pid)
-                                    .map_err(|e| anyhow::anyhow!("HID open {:04x}:{:04x}: {e}", candidate.vid, candidate.pid))
+                        let usb_dev = Device::clone(candidate.usb_device.as_ref().unwrap());
+                        let iface = lianli_transport::RusbHidTransport::find_hid_interface(&usb_dev)
+                            .unwrap_or(0);
+                        lianli_transport::RusbHidTransport::open(usb_dev, iface)
+                            .map_err(|e| anyhow::anyhow!("RusbHid open {:04x}:{:04x}: {e}", candidate.vid, candidate.pid))
+                            .and_then(|transport| {
+                                let backend = lianli_devices::hydroshift_lcd::HidBackend::Rusb(transport);
+                                HydroShiftLcdController::new(backend, candidate.pid)
                             })
-                            .and_then(|hid_dev| HydroShiftLcdController::new(hid_dev, candidate.pid))
                             .map(LcdBackend::HidLcd)
                     }
                     _ => unreachable!(),
