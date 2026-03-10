@@ -106,8 +106,15 @@ impl RusbHidTransport {
         } else {
             Duration::from_millis(timeout_ms as u64)
         };
-        match self.handle.read_interrupt(self.ep_in, buf, timeout) {
-            Ok(n) => Ok(n),
+        // Use a larger internal buffer to avoid Overflow when the device
+        // sends more than the caller expects, then copy what fits.
+        let mut tmp = [0u8; 4096];
+        match self.handle.read_interrupt(self.ep_in, &mut tmp, timeout) {
+            Ok(n) => {
+                let copy_len = n.min(buf.len());
+                buf[..copy_len].copy_from_slice(&tmp[..copy_len]);
+                Ok(copy_len)
+            }
             Err(rusb::Error::Timeout) => Ok(0),
             Err(e) => Err(e.into()),
         }
