@@ -207,7 +207,7 @@ pub enum RgbScope {
 pub struct RgbEffect {
     pub mode: RgbMode,
     /// Up to 4 RGB colors.
-    #[serde(default)]
+    #[serde(default = "default_colors")]
     pub colors: Vec<[u8; 3]>,
     /// Speed: 0-4 (slowest to fastest).
     #[serde(default = "default_speed")]
@@ -221,6 +221,10 @@ pub struct RgbEffect {
     /// Which LED scope to target (All, Top, Bottom, Inner, Outer).
     #[serde(default)]
     pub scope: RgbScope,
+}
+
+fn default_colors() -> Vec<[u8; 3]> {
+    vec![[0, 0, 0]]
 }
 
 fn default_speed() -> u8 {
