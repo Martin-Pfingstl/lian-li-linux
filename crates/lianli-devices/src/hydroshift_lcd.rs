@@ -198,6 +198,7 @@ impl HydroShiftLcdController {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
+        self.initialized = true;
         Ok(())
     }
 
@@ -252,12 +253,8 @@ impl HydroShiftLcdController {
         Ok(())
     }
 
-    /// Send a JPEG frame to the LCD (with lazy initialization on first call).
+    /// Send a JPEG frame to the LCD.
     pub fn send_frame(&mut self, frame: &[u8]) -> Result<()> {
-        if !self.initialized {
-            self.apply_lcd_settings()?;
-            self.initialized = true;
-        }
         self.send_chunked(CMD_SEND_JPEG, frame)
     }
 
