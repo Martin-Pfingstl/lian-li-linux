@@ -476,6 +476,35 @@ impl FanDevice for Ene6k77Controller {
     fn fan_slot_count(&self) -> u8 {
         4
     }
+
+    fn fan_port_info(&self) -> Vec<(u8, u8)> {
+        (0..4).map(|g| (g, self.fan_quantities[g as usize].max(1))).collect()
+    }
+
+    fn per_fan_control(&self) -> bool {
+        false
+    }
+
+    fn supports_mb_sync(&self) -> bool {
+        true
+    }
+
+    fn set_mb_rpm_sync(&self, group: u8, sync: bool) -> Result<()> {
+        if group >= 4 {
+            bail!("Group index {group} out of range (0-3)");
+        }
+        let sub_cmd = match self.model {
+            Ene6k77Model::SlFan | Ene6k77Model::SlRedragon => 0x31,
+            Ene6k77Model::AlFan => 0x42,
+            Ene6k77Model::SlV2Fan | Ene6k77Model::SlV2aFan
+            | Ene6k77Model::AlV2Fan | Ene6k77Model::SlInfinity => 0x62,
+        };
+        let data = (1u8 << (group + 4)) | ((sync as u8) << group);
+        self.send_feature(&[REPORT_ID, 0x10, sub_cmd, data, 0x00, 0x00])?;
+        debug!("Set group {group} MB RPM sync to {sync}");
+        thread::sleep(CMD_DELAY);
+        Ok(())
+    }
 }
 
 /// Per-group RGB device wrapper — each physical group appears as a separate device.
@@ -577,5 +606,16 @@ impl FanDevice for Arc<Ene6k77Controller> {
     fn fan_slot_count(&self) -> u8 {
         (**self).fan_slot_count()
     }
+    fn fan_port_info(&self) -> Vec<(u8, u8)> {
+        (**self).fan_port_info()
+    }
+    fn per_fan_control(&self) -> bool {
+        (**self).per_fan_control()
+    }
+    fn supports_mb_sync(&self) -> bool {
+        (**self).supports_mb_sync()
+    }
+    fn set_mb_rpm_sync(&self, port: u8, sync: bool) -> Result<()> {
+        (**self).set_mb_rpm_sync(port, sync)
+    }
 }
-
