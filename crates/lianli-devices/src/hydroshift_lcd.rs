@@ -168,6 +168,9 @@ impl HydroShiftLcdController {
     }
 
     fn init(&mut self) -> Result<()> {
+        if self.initialized {
+            return Ok(());
+        }
         info!("Initializing {}", self.variant.name());
 
         match self.read_firmware_internal(INIT_READ_TIMEOUT_MS) {
@@ -457,9 +460,7 @@ impl LcdDevice for HydroShiftLcdController {
         if self.initialized {
             return Ok(());
         }
-
-        self.apply_lcd_settings()?;
-        self.initialized = true;
+        self.init()?;
         Ok(())
     }
 }
