@@ -548,10 +548,13 @@ pub fn create_wired_controllers(
                 }),
         ),
         DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => Some(
-            crate::hydroshift_lcd::AioLcdRgbController::new(backend, pid)
-                .map(|c| WiredControllerSet {
-                    fan: None,
-                    rgb: vec![(String::new(), Box::new(c) as Box<dyn crate::traits::RgbDevice>)],
+            crate::hydroshift_lcd::HydroShiftLcdController::new(Arc::clone(&backend), pid)
+                .and_then(|lcd_ctrl| {
+                    let rgb_ctrl = crate::hydroshift_lcd::AioLcdRgbController::new(backend, pid)?;
+                    Ok(WiredControllerSet {
+                        fan: Some(Box::new(Arc::new(lcd_ctrl))),
+                        rgb: vec![(String::new(), Box::new(rgb_ctrl) as Box<dyn crate::traits::RgbDevice>)],
+                    })
                 }),
         ),
         _ => None,
