@@ -566,9 +566,15 @@ impl WirelessController {
         self.discovered_devices.lock().len()
     }
 
-    /// Get a snapshot of all discovered devices.
+    /// Get a snapshot of discovered devices bound to this PC's dongle.
     pub fn devices(&self) -> Vec<DiscoveredDevice> {
-        self.discovered_devices.lock().clone()
+        let local_mac = *self.master_mac.lock();
+        self.discovered_devices
+            .lock()
+            .iter()
+            .filter(|d| d.master_mac == local_mac)
+            .cloned()
+            .collect()
     }
 
     /// Get a snapshot of a single device by its MAC address.

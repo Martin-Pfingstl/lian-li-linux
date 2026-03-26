@@ -33,6 +33,8 @@
 | UNI FAN SL-INF | Yes | - | - |
 | UNI FAN CL / RL120 | Yes | - | - |
 
+> **Note:** Wireless fans must be bound to a Wireless dongle using L-Connect 3 on Windows before they can be used here. If you don't have a Windows install, you can run L-Connect 3 in a VM and pass the USB dongle through to pair your devices. This is only required 1 time if you have never configured your fans on Windows.
+
 ### USB (Standalone)
 
 | Device | LCD | Tested | Notes |
