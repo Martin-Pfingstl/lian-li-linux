@@ -440,20 +440,17 @@ impl Ene6k77Controller {
     fn read_input(&self, expected_len: usize) -> Result<Vec<u8>> {
         let dev = self.device.lock();
         let mut buf = vec![0u8; expected_len + 1]; // +1 for report ID
+        buf[0] = REPORT_ID;
         let n = dev
-            .read_timeout(&mut buf, 100)
-            .context("ENE 6K77: read input report")?;
+            .get_input_report(&mut buf)
+            .context("ENE 6K77: get input report")?;
         if n < expected_len {
             bail!(
                 "ENE 6K77: expected {expected_len} bytes, got {n}"
             );
         }
-        // Skip report ID byte if present
-        if buf[0] == REPORT_ID && n > expected_len {
-            Ok(buf[1..=expected_len].to_vec())
-        } else {
-            Ok(buf[..expected_len].to_vec())
-        }
+        // Skip report ID byte
+        Ok(buf[1..=expected_len].to_vec())
     }
 }
 
