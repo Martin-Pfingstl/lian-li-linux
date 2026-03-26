@@ -305,14 +305,18 @@ impl Ene6k77Controller {
             let outer_port = group * 2 + 1;
             match effect.scope {
                 RgbScope::Inner => {
-                    self.send_port_effect(inner_port, effect, mode_byte, speed_byte, dir_byte, brightness_byte)?;
+                    self.send_ring_colors(inner_port, effect, 8)?;
+                    self.send_effect(inner_port, mode_byte, speed_byte, dir_byte, brightness_byte)?;
                 }
                 RgbScope::Outer => {
-                    self.send_port_effect(outer_port, effect, mode_byte, speed_byte, dir_byte, brightness_byte)?;
+                    self.send_ring_colors(outer_port, effect, 12)?;
+                    self.send_effect(outer_port, mode_byte, speed_byte, dir_byte, brightness_byte)?;
                 }
                 _ => {
-                    self.send_port_effect(inner_port, effect, mode_byte, speed_byte, dir_byte, brightness_byte)?;
-                    self.send_port_effect(outer_port, effect, mode_byte, speed_byte, dir_byte, brightness_byte)?;
+                    self.send_ring_colors(inner_port, effect, 8)?;
+                    self.send_effect(inner_port, mode_byte, speed_byte, dir_byte, brightness_byte)?;
+                    self.send_ring_colors(outer_port, effect, 12)?;
+                    self.send_effect(outer_port, mode_byte, speed_byte, dir_byte, brightness_byte)?;
                 }
             }
         } else {
@@ -330,42 +334,46 @@ impl Ene6k77Controller {
         Ok(())
     }
 
-    /// Send color + effect to a single port (inner or outer ring, or single-ring group).
+    /// Send color + effect for SL (single-ring) models.
     fn send_port_effect(&self, port: u8, effect: &RgbEffect, mode: u8, speed: u8, dir: u8, brightness: u8) -> Result<()> {
-        // Color via output report: [0xE0, 0x30|port, R,B,G, ...] — R,B,G order!
         let mut color_cmd = vec![REPORT_ID, 0x30 | port];
-
-        if self.model.uses_double_port() {
-            // AL/ALV2/Infinity: expand to 36 colors (6 fans × 6 colors each)
-            // Each fan gets the same color repeated 6 times
-            let max_fans = self.model.max_fans_per_group() as usize;
-            for i in 0..max_fans {
-                let color = effect.colors.get(i).copied().unwrap_or([0, 0, 0]);
-                for _ in 0..6 {
-                    color_cmd.push(color[0]); // R
-                    color_cmd.push(color[2]); // B
-                    color_cmd.push(color[1]); // G
-                }
-            }
-        } else {
-            // SL models: 4 colors directly
-            for color in effect.colors.iter().take(4) {
-                color_cmd.push(color[0]); // R
-                color_cmd.push(color[2]); // B
-                color_cmd.push(color[1]); // G
-            }
-            while color_cmd.len() < 14 {
-                color_cmd.push(0);
-            }
+        for color in effect.colors.iter().take(4) {
+            color_cmd.push(color[0]); // R
+            color_cmd.push(color[2]); // B
+            color_cmd.push(color[1]); // G
         }
-
+        while color_cmd.len() < 14 {
+            color_cmd.push(0);
+        }
         match self.send_output(&color_cmd) {
             Ok(()) => debug!("Port {port}: wrote {} color bytes", color_cmd.len()),
             Err(e) => warn!("Port {port}: color output report failed: {e}"),
         }
         thread::sleep(CMD_DELAY);
+        self.send_effect(port, mode, speed, dir, brightness)
+    }
 
-        // Effect via feature report: [0xE0, 0x10|port, mode, speed, dir, brightness]
+    /// Send expanded color data for a dual-ring port (inner=8 LEDs/fan, outer=12 LEDs/fan).
+    fn send_ring_colors(&self, port: u8, effect: &RgbEffect, leds_per_fan: usize) -> Result<()> {
+        let mut color_cmd = vec![REPORT_ID, 0x30 | port];
+        let last_color = effect.colors.last().copied().unwrap_or([0, 0, 0]);
+        for i in 0..6usize {
+            let color = effect.colors.get(i).copied().unwrap_or(last_color);
+            for _ in 0..leds_per_fan {
+                color_cmd.push(color[0]); // R
+                color_cmd.push(color[2]); // B
+                color_cmd.push(color[1]); // G
+            }
+        }
+        match self.send_output(&color_cmd) {
+            Ok(()) => debug!("Port {port}: wrote {} color bytes ({leds_per_fan} LEDs/fan)", color_cmd.len()),
+            Err(e) => warn!("Port {port}: color output report failed: {e}"),
+        }
+        thread::sleep(CMD_DELAY);
+        Ok(())
+    }
+
+    fn send_effect(&self, port: u8, mode: u8, speed: u8, dir: u8, brightness: u8) -> Result<()> {
         self.send_feature(&[REPORT_ID, 0x10 | port, mode, speed, dir, brightness])?;
         thread::sleep(CMD_DELAY);
         Ok(())
