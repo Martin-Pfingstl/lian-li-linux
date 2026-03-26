@@ -1073,12 +1073,12 @@ fn with_zone_effect(
     zcfg.effect.clone()
 }
 
-/// Check if a device has group zones (Top/Bottom scopes) and return zone count.
+/// Check if a device has group zones (scoped: Top/Bottom or Inner/Outer) and return zone count.
 fn device_group_zone_count(shared: &Shared, dev_id: &str) -> Option<usize> {
     let state = shared.lock().unwrap();
     let cap = state.rgb_caps.iter().find(|c| c.device_id == dev_id)?;
     let has_group = cap.supported_scopes.iter().any(|scopes| {
-        scopes.iter().any(|s| matches!(s, RgbScope::Top | RgbScope::Bottom))
+        scopes.iter().any(|s| matches!(s, RgbScope::Top | RgbScope::Bottom | RgbScope::Inner | RgbScope::Outer))
     });
     if has_group { Some(cap.zones.len()) } else { None }
 }

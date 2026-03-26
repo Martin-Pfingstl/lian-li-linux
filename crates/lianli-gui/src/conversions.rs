@@ -387,9 +387,9 @@ pub fn rgb_devices_to_model(
 
             let mb_rgb_sync = dev_cfg.map(|d| d.mb_rgb_sync).unwrap_or(false);
 
-            // Determine if device has group zones (Top/Bottom scopes)
+            // Determine if device has group zones (scoped: Top/Bottom or Inner/Outer)
             let has_group_zones = cap.supported_scopes.iter().any(|scopes| {
-                scopes.iter().any(|s| matches!(s, RgbScope::Top | RgbScope::Bottom))
+                scopes.iter().any(|s| matches!(s, RgbScope::Top | RgbScope::Bottom | RgbScope::Inner | RgbScope::Outer))
             });
 
             // Check zone 0 config to determine synced state

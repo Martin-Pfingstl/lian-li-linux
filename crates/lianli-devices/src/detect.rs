@@ -534,9 +534,19 @@ pub fn create_wired_controllers(
         DeviceFamily::Ene6k77 => Some(
             crate::ene6k77::Ene6k77Controller::new(backend, pid).map(|ctrl| {
                 let ctrl = Arc::new(ctrl);
+                let rgb: Vec<_> = ctrl
+                    .group_devices()
+                    .into_iter()
+                    .map(|(group, dev)| {
+                        (
+                            format!("group{group}"),
+                            Box::new(dev) as Box<dyn crate::traits::RgbDevice>,
+                        )
+                    })
+                    .collect();
                 WiredControllerSet {
                     fan: Some(Box::new(Arc::clone(&ctrl))),
-                    rgb: vec![(String::new(), Box::new(ctrl) as Box<dyn crate::traits::RgbDevice>)],
+                    rgb,
                 }
             }),
         ),

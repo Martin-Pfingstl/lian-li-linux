@@ -155,8 +155,9 @@ impl Ene6k77Controller {
             }
         }
 
+        let max_fans = self.model.max_fans_per_group();
         for group in 0..4u8 {
-            if let Err(e) = self.set_fan_quantity(group, 3) {
+            if let Err(e) = self.set_fan_quantity(group, max_fans) {
                 warn!("  Failed to set group {group} fan quantity: {e}");
             }
         }
@@ -477,10 +478,30 @@ impl FanDevice for Ene6k77Controller {
     }
 }
 
-/// ENE 6K77 LED zones: one zone per group (4 groups).
-impl RgbDevice for Ene6k77Controller {
+/// Per-group RGB device wrapper — each physical group appears as a separate device.
+pub struct Ene6k77GroupDevice {
+    controller: Arc<Ene6k77Controller>,
+    group: u8,
+}
+
+impl Ene6k77GroupDevice {
+    pub fn new(controller: Arc<Ene6k77Controller>, group: u8) -> Self {
+        Self { controller, group }
+    }
+}
+
+impl Ene6k77Controller {
+    /// Create per-group RGB devices (similar to TL fan port_devices).
+    pub fn group_devices(self: &Arc<Self>) -> Vec<(u8, Ene6k77GroupDevice)> {
+        (0..4)
+            .map(|g| (g, Ene6k77GroupDevice::new(Arc::clone(self), g)))
+            .collect()
+    }
+}
+
+impl RgbDevice for Ene6k77GroupDevice {
     fn device_name(&self) -> String {
-        format!("UNI FAN {}", self.model.name())
+        format!("UNI FAN {} Group {}", self.controller.model.name(), self.group)
     }
 
     fn supported_modes(&self) -> Vec<RgbMode> {
@@ -499,30 +520,29 @@ impl RgbDevice for Ene6k77Controller {
     }
 
     fn zone_info(&self) -> Vec<RgbZoneInfo> {
-        let fans_per = self.model.max_fans_per_group();
-        let leds = self.leds_per_fan();
-        (0..4)
-            .map(|g| {
-                let qty = self.fan_quantities[g as usize];
-                let count = if qty > 0 { qty } else { fans_per };
-                RgbZoneInfo {
-                    name: format!("Group {g}"),
-                    led_count: count as u16 * leds,
-                }
+        let fans = self.controller.model.max_fans_per_group();
+        let leds_per_fan = self.controller.leds_per_fan();
+        (0..fans)
+            .map(|fan| RgbZoneInfo {
+                name: format!("Fan {}", fan + 1),
+                led_count: leds_per_fan,
             })
             .collect()
     }
 
-    fn set_zone_effect(&self, zone: u8, effect: &RgbEffect) -> Result<()> {
-        self.set_group_effect(zone, effect)
+    fn supported_scopes(&self) -> Vec<Vec<RgbScope>> {
+        let fans = self.controller.model.max_fans_per_group() as usize;
+        if self.controller.model.uses_double_port() {
+            vec![vec![RgbScope::All, RgbScope::Inner, RgbScope::Outer]; fans]
+        } else {
+            vec![vec![]; fans]
+        }
     }
 
-    fn supported_scopes(&self) -> Vec<Vec<RgbScope>> {
-        if self.model.uses_double_port() {
-            vec![vec![RgbScope::All, RgbScope::Inner, RgbScope::Outer]; 4]
-        } else {
-            vec![]
-        }
+    fn set_zone_effect(&self, _zone: u8, effect: &RgbEffect) -> Result<()> {
+        // ENE applies effects per-group (all fans same mode/speed/brightness).
+        // Scope routes to inner/outer/both ports for dual-ring models.
+        self.controller.set_group_effect(self.group, effect)
     }
 
     fn supports_mb_rgb_sync(&self) -> bool {
@@ -530,17 +550,14 @@ impl RgbDevice for Ene6k77Controller {
     }
 
     fn set_mb_rgb_sync(&self, enabled: bool) -> Result<()> {
-        // Sub-command varies by model:
-        //   SL/SL Redragon: 0x30, AL: 0x41, SLV2/ALV2/SL Infinity: 0x61
-        let sub_cmd = match self.model {
+        let sub_cmd = match self.controller.model {
             Ene6k77Model::SlFan | Ene6k77Model::SlRedragon => 0x30,
             Ene6k77Model::AlFan => 0x41,
             Ene6k77Model::SlV2Fan | Ene6k77Model::SlV2aFan
             | Ene6k77Model::AlV2Fan | Ene6k77Model::SlInfinity => 0x61,
         };
-        self.send_feature(&[REPORT_ID, 0x10, sub_cmd, enabled as u8, 0, 0])?;
+        self.controller.send_feature(&[REPORT_ID, 0x10, sub_cmd, enabled as u8, 0, 0])?;
         thread::sleep(CMD_DELAY);
-        debug!("Set MB RGB sync: enabled={enabled} (model={:?}, sub_cmd=0x{sub_cmd:02x})", self.model);
         Ok(())
     }
 }
@@ -562,24 +579,3 @@ impl FanDevice for Arc<Ene6k77Controller> {
     }
 }
 
-/// `Arc<Ene6k77Controller>` can be used directly as an `RgbDevice`.
-impl RgbDevice for Arc<Ene6k77Controller> {
-    fn device_name(&self) -> String {
-        (**self).device_name()
-    }
-    fn supported_modes(&self) -> Vec<RgbMode> {
-        (**self).supported_modes()
-    }
-    fn zone_info(&self) -> Vec<RgbZoneInfo> {
-        (**self).zone_info()
-    }
-    fn set_zone_effect(&self, zone: u8, effect: &RgbEffect) -> Result<()> {
-        (**self).set_zone_effect(zone, effect)
-    }
-    fn supports_mb_rgb_sync(&self) -> bool {
-        (**self).supports_mb_rgb_sync()
-    }
-    fn set_mb_rgb_sync(&self, enabled: bool) -> Result<()> {
-        (**self).set_mb_rgb_sync(enabled)
-    }
-}
