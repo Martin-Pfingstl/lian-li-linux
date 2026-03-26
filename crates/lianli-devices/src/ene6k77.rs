@@ -155,6 +155,12 @@ impl Ene6k77Controller {
             }
         }
 
+        for group in 0..4u8 {
+            if let Err(e) = self.set_fan_quantity(group, 3) {
+                warn!("  Failed to set group {group} fan quantity: {e}");
+            }
+        }
+
         Ok(())
     }
 
