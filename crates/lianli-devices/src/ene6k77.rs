@@ -334,14 +334,31 @@ impl Ene6k77Controller {
     fn send_port_effect(&self, port: u8, effect: &RgbEffect, mode: u8, speed: u8, dir: u8, brightness: u8) -> Result<()> {
         // Color via output report: [0xE0, 0x30|port, R,B,G, ...] — R,B,G order!
         let mut color_cmd = vec![REPORT_ID, 0x30 | port];
-        for color in effect.colors.iter().take(4) {
-            color_cmd.push(color[0]); // R
-            color_cmd.push(color[2]); // B
-            color_cmd.push(color[1]); // G
+
+        if self.model.uses_double_port() {
+            // AL/ALV2/Infinity: expand to 36 colors (6 fans × 6 colors each)
+            // Each fan gets the same color repeated 6 times
+            let max_fans = self.model.max_fans_per_group() as usize;
+            for i in 0..max_fans {
+                let color = effect.colors.get(i).copied().unwrap_or([0, 0, 0]);
+                for _ in 0..6 {
+                    color_cmd.push(color[0]); // R
+                    color_cmd.push(color[2]); // B
+                    color_cmd.push(color[1]); // G
+                }
+            }
+        } else {
+            // SL models: 4 colors directly
+            for color in effect.colors.iter().take(4) {
+                color_cmd.push(color[0]); // R
+                color_cmd.push(color[2]); // B
+                color_cmd.push(color[1]); // G
+            }
+            while color_cmd.len() < 14 {
+                color_cmd.push(0);
+            }
         }
-        while color_cmd.len() < 14 {
-            color_cmd.push(0);
-        }
+
         match self.send_output(&color_cmd) {
             Ok(()) => debug!("Port {port}: wrote {} color bytes", color_cmd.len()),
             Err(e) => warn!("Port {port}: color output report failed: {e}"),
