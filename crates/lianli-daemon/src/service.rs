@@ -345,6 +345,7 @@ impl ServiceManager {
                 WirelessFanType::Strimer(_) => DeviceFamily::WirelessStrimer,
                 WirelessFanType::Lc217 => DeviceFamily::WirelessLc217,
                 WirelessFanType::Led88 => DeviceFamily::WirelessLed88,
+                WirelessFanType::V150 => DeviceFamily::WirelessV150,
                 WirelessFanType::Unknown => DeviceFamily::Slv3Led,
             };
 

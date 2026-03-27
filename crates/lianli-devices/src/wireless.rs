@@ -87,6 +87,8 @@ pub enum WirelessFanType {
     Lc217,
     /// Universal Screen 8.8" LED ring (device_type 88) — 88 LEDs, no fans
     Led88,
+    /// Lancool V150 case fan/RGB controller (device_type 66) — 88 LEDs, dual-zone front/rear
+    V150,
     /// Unknown fan type
     Unknown,
 }
@@ -98,7 +100,7 @@ impl WirelessFanType {
             Self::Slv3Led | Self::Slv3Lcd => 14,
             Self::Tlv2Lcd => 10,
             Self::Tlv2Led | Self::SlInf => 11,
-            Self::Clv1 | Self::WaterBlock | Self::WaterBlock2 => 10,
+            Self::Clv1 | Self::WaterBlock | Self::WaterBlock2 | Self::V150 => 10,
             Self::Strimer(_) | Self::Lc217 | Self::Led88 => 0,
             Self::Unknown => 10,
         }
@@ -118,6 +120,7 @@ impl WirelessFanType {
             Self::Strimer(_) => "Strimer Plus Wireless",
             Self::Lc217 => "Lancool 217 Wireless",
             Self::Led88 => "Universal Screen 8.8\" Wireless",
+            Self::V150 => "Lancool V150 Wireless",
             Self::Unknown => "Wireless Fan",
         }
     }
@@ -129,7 +132,7 @@ impl WirelessFanType {
             Self::Slv3Led | Self::Slv3Lcd => 40,
             Self::SlInf => 44,
             Self::Clv1 | Self::WaterBlock | Self::WaterBlock2 => 24,
-            Self::Strimer(_) | Self::Lc217 | Self::Led88 => 0,
+            Self::Strimer(_) | Self::Lc217 | Self::Led88 | Self::V150 => 0,
             Self::Unknown => 20,
         }
     }
@@ -166,6 +169,7 @@ impl WirelessFanType {
             }),
             Self::Lc217 => Some(96),
             Self::Led88 => Some(88),
+            Self::V150 => Some(88),
             _ => None,
         }
     }
@@ -328,6 +332,7 @@ fn parse_device_record(data: &[u8], list_index: u8) -> Option<DiscoveredDevice> 
         11 => WirelessFanType::WaterBlock2,
         1..=9 => WirelessFanType::Strimer(device_type),
         65 => WirelessFanType::Lc217,
+        66 => WirelessFanType::V150,
         88 => WirelessFanType::Led88,
         _ => fan_types
             .iter()

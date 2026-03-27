@@ -51,6 +51,8 @@ pub enum DeviceFamily {
     WirelessLc217,
     /// Wireless Universal Screen 8.8" LED ring — RGB only via RF dongle
     WirelessLed88,
+    /// Wireless Lancool V150 case fan/RGB controller — dual-zone front/rear
+    WirelessV150,
     /// Strimer Plus wired LED strip (0x0CF2:0xA200) — RGB only via HID
     StrimerPlus,
 }
