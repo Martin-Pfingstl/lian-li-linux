@@ -39,6 +39,14 @@ pub enum DeviceFamily {
     UniversalScreen,
     /// Display mode switcher (VID=0x1A86)
     DisplaySwitcher,
+    /// Wireless AIO (WaterBlock/WaterBlock2) — pump + fans via RF dongle
+    WirelessAio,
+    /// Wireless Strimer LED strip — RGB only via RF dongle
+    WirelessStrimer,
+    /// Wireless Lancool 217 case RGB ring — RGB only via RF dongle
+    WirelessLc217,
+    /// Wireless Universal Screen 8.8" LED ring — RGB only via RF dongle
+    WirelessLed88,
 }
 
 /// USB Vendor/Product ID pair.
@@ -265,6 +273,7 @@ impl DeviceFamily {
                 | Self::HydroShiftLcd
                 | Self::Galahad2Lcd
                 | Self::HydroShift2Lcd
+                | Self::WirelessAio
         )
     }
 

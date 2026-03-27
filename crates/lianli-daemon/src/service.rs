@@ -319,49 +319,67 @@ impl ServiceManager {
         // Build device list from wireless discovery
         let mut devices = Vec::new();
         for dev in self.wireless.devices() {
+            use lianli_devices::wireless::WirelessFanType;
+            use lianli_shared::device_id::DeviceFamily;
+
             let family = match dev.fan_type {
-                lianli_devices::wireless::WirelessFanType::Slv3Led => {
-                    lianli_shared::device_id::DeviceFamily::Slv3Led
+                WirelessFanType::Slv3Led => DeviceFamily::Slv3Led,
+                WirelessFanType::Slv3Lcd => DeviceFamily::Slv3Lcd,
+                WirelessFanType::Tlv2Lcd => DeviceFamily::Tlv2Lcd,
+                WirelessFanType::Tlv2Led => DeviceFamily::Tlv2Led,
+                WirelessFanType::SlInf => DeviceFamily::SlInf,
+                WirelessFanType::Clv1 => DeviceFamily::Clv1,
+                WirelessFanType::WaterBlock | WirelessFanType::WaterBlock2 => {
+                    DeviceFamily::WirelessAio
                 }
-                lianli_devices::wireless::WirelessFanType::Slv3Lcd => {
-                    lianli_shared::device_id::DeviceFamily::Slv3Lcd
-                }
-                lianli_devices::wireless::WirelessFanType::Tlv2Lcd => {
-                    lianli_shared::device_id::DeviceFamily::Tlv2Lcd
-                }
-                lianli_devices::wireless::WirelessFanType::Tlv2Led => {
-                    lianli_shared::device_id::DeviceFamily::Tlv2Led
-                }
-                lianli_devices::wireless::WirelessFanType::SlInf => {
-                    lianli_shared::device_id::DeviceFamily::SlInf
-                }
-                lianli_devices::wireless::WirelessFanType::Clv1 => {
-                    lianli_shared::device_id::DeviceFamily::Clv1
-                }
-                lianli_devices::wireless::WirelessFanType::Unknown => {
-                    lianli_shared::device_id::DeviceFamily::Slv3Led
-                }
+                WirelessFanType::Strimer(_) => DeviceFamily::WirelessStrimer,
+                WirelessFanType::Lc217 => DeviceFamily::WirelessLc217,
+                WirelessFanType::Led88 => DeviceFamily::WirelessLed88,
+                WirelessFanType::Unknown => DeviceFamily::Slv3Led,
             };
+
+            let is_aio = dev.fan_type.is_aio();
+            let is_rgb_only = dev.fan_type.is_rgb_only();
+
+            // AIO: fan_count from discovery + 1 for pump
+            let fan_count = if is_aio {
+                dev.fan_count + 1
+            } else {
+                dev.fan_count
+            };
+
+            // RGB zones: fans + pump head for AIO, or 1 zone for RGB-only devices
+            let rgb_zone_count = if is_aio {
+                dev.fan_count + 1 // fans + pump head
+            } else if is_rgb_only {
+                1
+            } else {
+                dev.fan_count
+            };
+
             devices.push(DeviceInfo {
                 device_id: format!("wireless:{}", dev.mac_str()),
                 family,
                 name: dev.fan_type.display_name().to_string(),
                 serial: Some(dev.mac_str()),
-                has_lcd: false, // LCD streaming uses USB bulk, not wireless
-                has_fan: dev.fan_count > 0,
-                has_pump: false,
-                has_rgb: true, // All wireless fans have RGB LEDs
-                fan_count: Some(dev.fan_count),
-                per_fan_control: Some(true),
+                has_lcd: false,
+                has_fan: dev.fan_count > 0 || is_aio,
+                has_pump: is_aio,
+                has_rgb: true,
+                fan_count: Some(fan_count),
+                per_fan_control: Some(!is_rgb_only),
                 mb_sync_support: dev.fan_type.supports_hw_mobo_sync() || self.wireless.motherboard_pwm().is_some(),
-                rgb_zone_count: Some(dev.fan_count), // One zone per fan
+                rgb_zone_count: Some(rgb_zone_count),
                 screen_width: None,
                 screen_height: None,
             });
 
             // Update RPM telemetry keyed by device_id
             let device_id = format!("wireless:{}", dev.mac_str());
-            let rpms: Vec<u16> = dev.fan_rpms[..dev.fan_count as usize].to_vec();
+            let mut rpms: Vec<u16> = dev.fan_rpms[..dev.fan_count as usize].to_vec();
+            if is_aio {
+                rpms.push(dev.fan_rpms[3]); // pump RPM
+            }
             ipc_state.telemetry.fan_rpms.insert(device_id, rpms);
         }
 

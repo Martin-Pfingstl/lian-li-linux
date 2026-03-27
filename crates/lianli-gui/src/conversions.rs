@@ -28,6 +28,10 @@ fn family_display_name(f: DeviceFamily) -> &'static str {
         DeviceFamily::Lancool207 => "Lancool 207 Digital",
         DeviceFamily::UniversalScreen => "Universal Screen 8.8\"",
         DeviceFamily::DisplaySwitcher => "Display Mode Switcher",
+        DeviceFamily::WirelessAio => "HydroShift Wireless AIO",
+        DeviceFamily::WirelessStrimer => "Strimer Plus Wireless",
+        DeviceFamily::WirelessLc217 => "Lancool 217 Wireless",
+        DeviceFamily::WirelessLed88 => "Universal Screen 8.8\" Wireless",
     }
 }
 

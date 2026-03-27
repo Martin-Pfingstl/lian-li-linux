@@ -63,6 +63,16 @@ pub enum WirelessFanType {
     SlInf,
     /// CL / RL120 fans — 10% minimum duty (special PWM filter)
     Clv1,
+    /// First-gen wireless AIO (device_type 10) — pump + 0-4 fans, 24 LEDs each
+    WaterBlock,
+    /// HydroShift II wireless AIO (device_type 11) — pump + 0-4 fans, 24 LEDs each
+    WaterBlock2,
+    /// Wireless LED strip (device_type 1-9) — RGB only, no fans
+    Strimer(u8),
+    /// Lancool 217 case RGB ring (device_type 65) — 96 LEDs, no fans
+    Lc217,
+    /// Universal Screen 8.8" LED ring (device_type 88) — 88 LEDs, no fans
+    Led88,
     /// Unknown fan type
     Unknown,
 }
@@ -74,7 +84,8 @@ impl WirelessFanType {
             Self::Slv3Led | Self::Slv3Lcd => 14,
             Self::Tlv2Lcd => 10,
             Self::Tlv2Led | Self::SlInf => 11,
-            Self::Clv1 => 10,
+            Self::Clv1 | Self::WaterBlock | Self::WaterBlock2 => 10,
+            Self::Strimer(_) | Self::Lc217 | Self::Led88 => 0,
             Self::Unknown => 10,
         }
     }
@@ -88,41 +99,64 @@ impl WirelessFanType {
             Self::Tlv2Led => "UNI FAN TL Wireless",
             Self::SlInf => "UNI FAN SL-INF Wireless",
             Self::Clv1 => "UNI FAN CL Wireless",
+            Self::WaterBlock => "HydroShift Wireless AIO",
+            Self::WaterBlock2 => "HydroShift II Wireless AIO",
+            Self::Strimer(_) => "Strimer Plus Wireless",
+            Self::Lc217 => "Lancool 217 Wireless",
+            Self::Led88 => "Universal Screen 8.8\" Wireless",
             Self::Unknown => "Wireless Fan",
         }
     }
 
     /// Number of addressable LEDs per fan for this device type.
-    ///
-    /// LED counts per device type:
-    /// - TLV2: 104 LEDs per zone (UP/DOWN combined, ~26 per fan)
-    /// - SLV3: 160 LEDs per zone (inner + outer rings, ~40 per fan)
-    /// - SL-INF: 176 LEDs total across all fans (~44 per fan)
-    /// - CL: ~24 LEDs per fan (outer + center)
     pub fn leds_per_fan(self) -> u8 {
         match self {
             Self::Tlv2Lcd | Self::Tlv2Led => 26,
             Self::Slv3Led | Self::Slv3Lcd => 40,
             Self::SlInf => 44,
-            Self::Clv1 => 24,
+            Self::Clv1 | Self::WaterBlock | Self::WaterBlock2 => 24,
+            Self::Strimer(_) | Self::Lc217 | Self::Led88 => 0,
             Self::Unknown => 20,
         }
     }
 
     /// Whether the receiver firmware supports direct motherboard PWM sync.
-    ///
-    /// SLV3 receivers have a physical PWM header — sending PWM=[6,6,6,6]
-    /// tells the firmware to read from that header instead. Other devices
-    /// (TLV2, SL-INF, CL) need the host to poll and relay mobo PWM.
     pub fn supports_hw_mobo_sync(self) -> bool {
         matches!(self, Self::Slv3Led | Self::Slv3Lcd)
     }
 
+    /// Whether this is a wireless AIO device with a pump.
+    pub fn is_aio(self) -> bool {
+        matches!(self, Self::WaterBlock | Self::WaterBlock2)
+    }
+
+    /// Whether this is an RGB-only device with no fans or pump.
+    pub fn is_rgb_only(self) -> bool {
+        matches!(self, Self::Strimer(_) | Self::Lc217 | Self::Led88)
+    }
+
+    /// Number of LEDs on the pump head (AIO devices only).
+    pub fn pump_led_count(self) -> u8 {
+        if self.is_aio() { 24 } else { 0 }
+    }
+
+    /// Total LED count override for non-fan devices.
+    /// Returns `Some(count)` for RGB-only devices, `None` for fan-based devices.
+    pub fn total_led_count_override(self) -> Option<u16> {
+        match self {
+            Self::Strimer(dt) => Some(match dt {
+                1 | 2 => 116,
+                3 | 4 => 132,
+                5 | 6 => 174,
+                _ => 88,
+            }),
+            Self::Lc217 => Some(96),
+            Self::Led88 => Some(88),
+            _ => None,
+        }
+    }
+
     /// Classify fan type from the fan-type byte in the device record.
-    ///
-    /// Byte ranges for classifying fan type:
-    ///   `(num < 27) ? SLV3Fan : (num < 36) ? TLV2Fan : SLINF`
-    /// Within SLV3/TLV2, bytes base+4..base+7 have LCD.
     fn from_fan_type_byte(b: u8) -> Self {
         match b {
             20..=23 => Self::Slv3Led,          // SLV3 LED (120/140, normal/reverse)
@@ -176,19 +210,35 @@ impl DiscoveredDevice {
             self.mac[3], self.mac[4], self.mac[5],
         )
     }
+
+    pub fn is_aio(&self) -> bool {
+        self.fan_type.is_aio()
+    }
+
+    /// Pump RPM (from slot 3) for AIO devices.
+    pub fn pump_rpm(&self) -> Option<u16> {
+        if self.is_aio() { Some(self.fan_rpms[3]) } else { None }
+    }
 }
 
 impl fmt::Display for DiscoveredDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} ({:?}, {} fans, ch={}, rx={})",
-            self.mac_str(),
-            self.fan_type,
-            self.fan_count,
-            self.channel,
-            self.rx_type,
-        )
+        let mac = self.mac_str();
+        if self.fan_type.is_aio() {
+            write!(
+                f,
+                "{} ({:?}, {} fans, pump={}rpm, ch={}, rx={})",
+                mac, self.fan_type, self.fan_count,
+                self.fan_rpms[3], self.channel, self.rx_type,
+            )
+        } else {
+            write!(
+                f,
+                "{} ({:?}, {} fans, ch={}, rx={})",
+                mac, self.fan_type, self.fan_count,
+                self.channel, self.rx_type,
+            )
+        }
     }
 }
 
@@ -258,12 +308,19 @@ fn parse_device_record(data: &[u8], list_index: u8) -> Option<DiscoveredDevice> 
 
     let cmd_seq = data[40];
 
-    // Classify fan type from the first non-zero fan type byte
-    let fan_type = fan_types
-        .iter()
-        .find(|&&b| b != 0)
-        .map(|&b| WirelessFanType::from_fan_type_byte(b))
-        .unwrap_or(WirelessFanType::Unknown);
+    // Classify device by device_type first, then by fan_type bytes for fan groups
+    let fan_type = match device_type {
+        10 => WirelessFanType::WaterBlock,
+        11 => WirelessFanType::WaterBlock2,
+        1..=9 => WirelessFanType::Strimer(device_type),
+        65 => WirelessFanType::Lc217,
+        88 => WirelessFanType::Led88,
+        _ => fan_types
+            .iter()
+            .find(|&&b| b != 0)
+            .map(|&b| WirelessFanType::from_fan_type_byte(b))
+            .unwrap_or(WirelessFanType::Unknown),
+    };
 
     Some(DiscoveredDevice {
         mac,
@@ -891,9 +948,11 @@ fn apply_pwm_constraints(pwm: &mut [u8; 4], device: &DiscoveredDevice) {
     let min_pwm = ((device.fan_type.min_duty_percent() as f32 / 100.0) * 255.0) as u8;
 
     for (i, val) in pwm.iter_mut().enumerate() {
-        // Only apply to slots that have fans (based on fan_count)
-        if i as u8 >= device.fan_count {
-            *val = 0; // Unused slots must be 0
+        // Only apply to slots that have fans (based on fan_count).
+        // For AIO devices, slot 3 is the pump — don't zero it.
+        let is_pump_slot = i == 3 && device.fan_type.is_aio();
+        if i as u8 >= device.fan_count && !is_pump_slot {
+            *val = 0;
             continue;
         }
 
