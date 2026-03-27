@@ -11,10 +11,10 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
-const TX_VENDOR: u16 = 0x0416;
-const TX_PRODUCT: u16 = 0x8040;
-const RX_VENDOR: u16 = 0x0416;
-const RX_PRODUCT: u16 = 0x8041;
+/// TX dongle VID:PID pairs (V1 and V2 hardware).
+const TX_IDS: [(u16, u16); 2] = [(0x0416, 0x8040), (0x1A86, 0xE304)];
+/// RX dongle VID:PID pairs (V1 and V2 hardware).
+const RX_IDS: [(u16, u16); 2] = [(0x0416, 0x8041), (0x1A86, 0xE305)];
 
 const USB_CMD_SEND_RF: u8 = 0x10;
 const USB_CMD_GET_MAC: u8 = 0x11;
@@ -37,6 +37,20 @@ fn decode_command(prefix: &str) -> Vec<u8> {
     let mut bytes = hex::decode(prefix).expect("valid hex literal");
     bytes.resize(64, 0u8);
     bytes
+}
+
+/// Try to open a USB device matching any of the given VID:PID pairs.
+fn open_any(ids: &[(u16, u16)]) -> Result<UsbTransport> {
+    let mut last_err = None;
+    for &(vid, pid) in ids {
+        match UsbTransport::open(vid, pid) {
+            Ok(transport) => return Ok(transport),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err
+        .map(|e| anyhow::anyhow!(e))
+        .unwrap_or_else(|| anyhow::anyhow!("no VID:PID pairs to try")))
 }
 
 /// Wireless fan device type, determines minimum duty and RPM curves.
@@ -388,7 +402,7 @@ impl WirelessController {
         let max_retries = 3;
 
         for attempt in 1..=max_retries {
-            match UsbTransport::open(TX_VENDOR, TX_PRODUCT) {
+            match open_any(&TX_IDS) {
                 Ok(device) => {
                     tx = Some(device);
                     break;
@@ -398,8 +412,7 @@ impl WirelessController {
                     thread::sleep(Duration::from_millis(1000 * attempt as u64));
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!(e))
-                        .context("opening wireless TX (0416:8040)");
+                    return Err(e).context("opening wireless TX dongle");
                 }
             }
         }
@@ -408,13 +421,13 @@ impl WirelessController {
         tx.detach_and_configure("TX")?;
         let tx_arc = Arc::new(Mutex::new(tx));
 
-        let rx_arc = match UsbTransport::open(RX_VENDOR, RX_PRODUCT) {
+        let rx_arc = match open_any(&RX_IDS) {
             Ok(mut rx) => {
                 rx.detach_and_configure("RX")?;
                 Some(Arc::new(Mutex::new(rx)))
             }
             Err(_) => {
-                warn!("RX device (0416:8041) not found – telemetry disabled");
+                warn!("RX dongle not found – telemetry disabled");
                 None
             }
         };
@@ -591,7 +604,7 @@ impl WirelessController {
 
     pub fn soft_reset(&mut self) -> bool {
         if self.tx.is_none() {
-            if let Ok(mut transport) = UsbTransport::open(TX_VENDOR, TX_PRODUCT) {
+            if let Ok(mut transport) = open_any(&TX_IDS) {
                 if transport.detach_and_configure("TX").is_ok() {
                     self.tx = Some(Arc::new(Mutex::new(transport)));
                 }

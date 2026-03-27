@@ -94,6 +94,19 @@ pub static KNOWN_DEVICES: &[DeviceEntry] = &[
         name: "Wireless RX Dongle",
         hid_usage_page: None,
     },
+    // Wireless V2 dongles (CH340 chipset, VID=0x1A86)
+    DeviceEntry {
+        id: UsbId::new(0x1A86, 0xE304),
+        family: DeviceFamily::WirelessTx,
+        name: "Wireless TX Dongle V2",
+        hid_usage_page: None,
+    },
+    DeviceEntry {
+        id: UsbId::new(0x1A86, 0xE305),
+        family: DeviceFamily::WirelessRx,
+        name: "Wireless RX Dongle V2",
+        hid_usage_page: None,
+    },
     // ENE 6K77 wired fans (SL/AL series)
     DeviceEntry {
         id: UsbId::new(0x0CF2, 0xA100),
