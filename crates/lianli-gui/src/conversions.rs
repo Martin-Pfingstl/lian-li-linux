@@ -348,7 +348,7 @@ pub fn fan_groups_to_model(
     // Iterate live devices, look up config group for each.
     let fan_devices: Vec<&DeviceInfo> = devices
         .iter()
-        .filter(|d| d.has_fan && d.fan_count.unwrap_or(0) > 0)
+        .filter(|d| (d.has_fan && d.fan_count.unwrap_or(0) > 0) || d.has_pump_control)
         .collect();
 
     let items: Vec<super::FanGroupData> = fan_devices
@@ -365,12 +365,20 @@ pub fn fan_groups_to_model(
 
             let slots: Vec<super::FanSpeedSlot> = speeds.iter().map(fan_speed_to_slot).collect();
 
+            let pump_slot = if dev.has_pump_control {
+                fan_speed_to_slot(speeds.get(3).unwrap_or(&FanSpeed::Constant(0)))
+            } else {
+                fan_speed_to_slot(&FanSpeed::Constant(0))
+            };
+
             super::FanGroupData {
                 device_id: SharedString::from(&dev.device_id),
                 device_name: SharedString::from(&device_name),
                 fan_count: dev.fan_count.unwrap_or(4) as i32,
                 per_fan_control: dev.per_fan_control.unwrap_or(false),
                 mb_sync_support: dev.mb_sync_support,
+                has_pump_control: dev.has_pump_control,
+                pump_slot,
                 slots: ModelRc::new(VecModel::from(slots)),
             }
         })

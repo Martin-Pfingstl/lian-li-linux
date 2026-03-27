@@ -289,6 +289,7 @@ impl ServiceManager {
                         has_fan: det.family.has_fan(),
                         has_pump: det.family.has_pump(),
                         has_rgb: det.family.has_rgb(),
+                        has_pump_control: false,
                         fan_count: None,
                         per_fan_control: None,
                         mb_sync_support: false,
@@ -352,12 +353,9 @@ impl ServiceManager {
             let is_aio = dev.fan_type.is_aio();
             let is_rgb_only = dev.fan_type.is_rgb_only();
 
-            // AIO: fan_count from discovery + 1 for pump
-            let fan_count = if is_aio {
-                dev.fan_count + 1
-            } else {
-                dev.fan_count
-            };
+            // Fan count is the actual number of fans (excluding pump).
+            // Pump speed control is handled separately via has_pump_control.
+            let fan_count = dev.fan_count;
 
             // RGB zones: fans + pump head for AIO, or 1 zone for RGB-only devices
             let rgb_zone_count = if is_aio {
@@ -376,9 +374,10 @@ impl ServiceManager {
                 vid: 0,
                 pid: 0,
                 has_lcd: false,
-                has_fan: dev.fan_count > 0 || is_aio,
+                has_fan: dev.fan_count > 0,
                 has_pump: is_aio,
                 has_rgb: true,
+                has_pump_control: is_aio,
                 fan_count: Some(fan_count),
                 per_fan_control: Some(!is_rgb_only),
                 mb_sync_support: dev.fan_type.supports_hw_mobo_sync() || self.wireless.motherboard_pwm().is_some(),
@@ -583,6 +582,7 @@ impl ServiceManager {
                     let ports = fan_ctrl.fan_port_info();
                     let per_fan = fan_ctrl.per_fan_control();
                     let mb_sync = fan_ctrl.supports_mb_sync();
+                    let pump_control = fan_ctrl.has_pump_control();
                     for &(port, fan_count) in &ports {
                         let device_id = if ports.len() > 1 {
                             format!("{base_id}:port{port}")
@@ -603,8 +603,9 @@ impl ServiceManager {
                             pid,
                             has_lcd: false,
                             has_fan: true,
-                            has_pump: false,
+                            has_pump: pump_control,
                             has_rgb: family.has_rgb(),
+                            has_pump_control: pump_control,
                             fan_count: Some(fan_count),
                             per_fan_control: Some(per_fan),
                             mb_sync_support: mb_sync,

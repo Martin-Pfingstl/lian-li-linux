@@ -124,6 +124,9 @@ pub struct DeviceInfo {
     pub has_fan: bool,
     pub has_pump: bool,
     pub has_rgb: bool,
+    /// Whether this device exposes a controllable pump (speed slot 3).
+    #[serde(default)]
+    pub has_pump_control: bool,
     pub fan_count: Option<u8>,
     pub per_fan_control: Option<bool>,
     pub mb_sync_support: bool,
