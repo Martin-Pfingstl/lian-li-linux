@@ -829,8 +829,14 @@ fn wire_lcd_callbacks(
                                     "Image" => lianli_shared::media::MediaType::Image,
                                     "Video" => lianli_shared::media::MediaType::Video,
                                     "GIF" => lianli_shared::media::MediaType::Gif,
-                                    "Solid Color" => lianli_shared::media::MediaType::Color,
-                                    "Sensor Gauge" => lianli_shared::media::MediaType::Sensor,
+                                    "Solid Color" => {
+                                        lcd.rgb.get_or_insert([0, 0, 0]);
+                                        lianli_shared::media::MediaType::Color
+                                    }
+                                    "Sensor Gauge" => {
+                                        lcd.sensor.get_or_insert_with(default_sensor);
+                                        lianli_shared::media::MediaType::Sensor
+                                    }
                                     _ => lcd.media_type,
                                 };
                             }
