@@ -3,8 +3,6 @@ use lianli_shared::media::{SensorDescriptor, SensorRange, SensorSourceConfig};
 use lianli_shared::screen::ScreenInfo;
 use image::{ImageBuffer, Rgb, RgbImage};
 use rusttype::{point, Font, Scale};
-use std::process::Command;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -77,7 +75,15 @@ impl SensorAsset {
 
         let source = match &descriptor.source {
             SensorSourceConfig::Constant { value } => SensorSource::Constant(value.clamp(0.0, 100.0)),
-            SensorSourceConfig::Command { cmd } => SensorSource::Command(cmd.clone()),
+            SensorSourceConfig::Command { .. }
+            | SensorSourceConfig::Hwmon { .. }
+            | SensorSourceConfig::NvidiaGpu { .. } => {
+                let temp_source = descriptor.source.to_temp_source();
+                match lianli_shared::sensors::resolve_sensor(&temp_source) {
+                    Some(resolved) => SensorSource::Resolved(resolved),
+                    None => return Err(MediaError::Sensor("sensor not found on system".into())),
+                }
+            }
         };
 
         let font = if let Some(font_path) = &descriptor.font_path {
@@ -233,29 +239,9 @@ impl SensorAsset {
     fn read_value(&self) -> Result<f32, MediaError> {
         match &self.source {
             SensorSource::Constant(value) => Ok(*value),
-            SensorSource::Command(cmd) => {
-                let output = Command::new("sh")
-                    .arg("-c")
-                    .arg(cmd)
-                    .output()
-                    .map_err(|e| MediaError::Sensor(e.to_string()))?;
-                if !output.status.success() {
-                    return Err(MediaError::Sensor(format!(
-                        "command '{cmd}' exited with status {}",
-                        output.status
-                    )));
-                }
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let value_str = stdout.split_whitespace().next().unwrap_or("0");
-                let parsed = f32::from_str(value_str).map_err(|e| {
-                    MediaError::Sensor(format!("failed to parse sensor value '{value_str}': {e}"))
-                })?;
-                if !parsed.is_finite() {
-                    return Err(MediaError::Sensor(format!(
-                        "sensor value '{value_str}' not finite"
-                    )));
-                }
-                Ok(parsed)
+            SensorSource::Resolved(resolved) => {
+                lianli_shared::sensors::read_sensor_temp(resolved)
+                    .map_err(|e| MediaError::Sensor(e.to_string()))
             }
         }
     }
@@ -264,7 +250,7 @@ impl SensorAsset {
 #[derive(Debug)]
 enum SensorSource {
     Constant(f32),
-    Command(String),
+    Resolved(lianli_shared::sensors::ResolvedSensor),
 }
 
 struct GaugeParams {

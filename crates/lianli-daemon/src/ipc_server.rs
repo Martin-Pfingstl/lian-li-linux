@@ -157,6 +157,11 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
     match request {
         IpcRequest::Ping => IpcResponse::ok(serde_json::json!("pong")),
 
+        IpcRequest::ListSensors => {
+            let sensors = lianli_shared::sensors::enumerate_sensors();
+            IpcResponse::ok(&sensors)
+        }
+
         IpcRequest::ListDevices => {
             let state = state.lock();
             IpcResponse::ok(&state.devices)

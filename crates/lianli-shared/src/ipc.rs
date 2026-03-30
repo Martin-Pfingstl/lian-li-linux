@@ -66,6 +66,7 @@ pub enum IpcRequest {
     BindWirelessDevice {
         mac: String,
     },
+    ListSensors,
     Subscribe,
     Ping,
 }

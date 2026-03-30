@@ -16,6 +16,40 @@ pub enum MediaType {
 pub enum SensorSourceConfig {
     Constant { value: f32 },
     Command { cmd: String },
+    Hwmon {
+        name: String,
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device_path: Option<String>,
+    },
+    #[serde(rename = "nvidia_gpu")]
+    NvidiaGpu {
+        #[serde(default)]
+        gpu_index: u32,
+    },
+}
+
+impl SensorSourceConfig {
+    pub fn to_temp_source(&self) -> crate::sensors::TempSource {
+        match self {
+            Self::Constant { value } => crate::sensors::TempSource::Command {
+                cmd: format!("echo {value}"),
+            },
+            Self::Command { cmd } => crate::sensors::TempSource::Command { cmd: cmd.clone() },
+            Self::Hwmon {
+                name,
+                label,
+                device_path,
+            } => crate::sensors::TempSource::Hwmon {
+                name: name.clone(),
+                label: label.clone(),
+                device_path: device_path.clone(),
+            },
+            Self::NvidiaGpu { gpu_index } => crate::sensors::TempSource::NvidiaGpu {
+                gpu_index: *gpu_index,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -82,6 +116,12 @@ impl SensorDescriptor {
                     anyhow::bail!("sensor command must not be empty");
                 }
             }
+            SensorSourceConfig::Hwmon { name, label, .. } => {
+                if name.trim().is_empty() || label.trim().is_empty() {
+                    anyhow::bail!("sensor hwmon name and label must not be empty");
+                }
+            }
+            SensorSourceConfig::NvidiaGpu { .. } => {}
         }
 
         if self.update_interval_ms == 0 {

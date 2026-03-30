@@ -525,12 +525,16 @@ fn wire_fan_callbacks(
         window.on_fan_add_curve(move || {
             {
                 let mut state = shared.lock().unwrap();
+                let default_source = state
+                    .available_sensors
+                    .first()
+                    .map(|s| s.source.clone());
                 if let Some(ref mut c) = state.config {
                     let n = c.fan_curves.len() + 1;
                     c.fan_curves.push(FanCurve {
                         name: format!("curve-{n}"),
-                        temp_command: "cat /sys/class/thermal/thermal_zone0/temp | awk '{print $1/1000}'"
-                            .to_string(),
+                        temp_source: default_source,
+                        temp_command: String::new(),
                         curve: vec![(30.0, 30.0), (50.0, 50.0), (70.0, 80.0), (85.0, 100.0)],
                     });
                 }

@@ -118,6 +118,12 @@ pub fn lcd_to_slint(lcd: &LcdConfig, devices: &[DeviceInfo]) -> super::LcdEntryD
     let cmd = sensor.map(|s| match &s.source {
         lianli_shared::media::SensorSourceConfig::Command { cmd } => cmd.clone(),
         lianli_shared::media::SensorSourceConfig::Constant { value } => format!("{value}"),
+        lianli_shared::media::SensorSourceConfig::Hwmon { name, label, .. } => {
+            format!("{name} / {label}")
+        }
+        lianli_shared::media::SensorSourceConfig::NvidiaGpu { gpu_index } => {
+            format!("NVIDIA GPU {gpu_index}")
+        }
     }).unwrap_or_default();
 
     let text_color = sensor.map(|s| s.text_color).unwrap_or([255, 255, 255]);

@@ -3,10 +3,12 @@
 use lianli_shared::config::AppConfig;
 use lianli_shared::ipc::DeviceInfo;
 use lianli_shared::rgb::RgbDeviceCapabilities;
+use lianli_shared::sensors::SensorInfo;
 
 #[derive(Debug, Default)]
 pub struct SharedState {
     pub config: Option<AppConfig>,
     pub rgb_caps: Vec<RgbDeviceCapabilities>,
     pub devices: Vec<DeviceInfo>,
+    pub available_sensors: Vec<SensorInfo>,
 }
