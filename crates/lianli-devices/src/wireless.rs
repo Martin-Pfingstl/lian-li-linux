@@ -530,11 +530,21 @@ impl WirelessController {
 
         self.poll_thread = Some(thread::spawn(move || {
             let mut found_devices = false;
+            let mut consecutive_errors = 0u32;
             while !stop_flag.load(Ordering::SeqCst) {
                 if let Err(err) = poll_and_discover(&rx, &discovered_devices, &mobo_pwm, &master_mac) {
-                    warn!("RX polling error: {err:?}");
-                    break;
+                    consecutive_errors += 1;
+                    if consecutive_errors <= 3 {
+                        warn!("RX polling error ({consecutive_errors}): {err:?}");
+                    } else if consecutive_errors == 4 {
+                        warn!("RX polling errors continuing, suppressing further logs");
+                    }
+                    // Back off: 1s, 2s, 4s, ... capped at 30s
+                    let backoff = Duration::from_secs((1 << consecutive_errors.min(5)).min(30));
+                    thread::sleep(backoff);
+                    continue;
                 }
+                consecutive_errors = 0;
                 if !found_devices && !discovered_devices.lock().is_empty() {
                     found_devices = true;
                 }
