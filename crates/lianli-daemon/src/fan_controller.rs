@@ -108,6 +108,10 @@ fn fan_control_thread(
 
     info!("Starting fan speed control loop ({} group(s))", config.speeds.len());
 
+    // Rolling temperature history per command for smoothing.
+    // Keeps the last few readings and uses the median to filter out spikes.
+    let mut temp_history: HashMap<String, Vec<f32>> = HashMap::new();
+
     // Initialize MB RPM sync state for all wired groups at startup.
     // Groups with MbSync speeds get sync enabled; others get it disabled.
     for (group_idx, group) in config.speeds.iter().enumerate() {
@@ -170,7 +174,7 @@ fn fan_control_thread(
                 continue;
             }
 
-            let speeds = match calculate_fan_speeds(&group.speeds, &curves) {
+            let speeds = match calculate_fan_speeds(&group.speeds, &curves, &mut temp_history) {
                 Ok(speeds) => speeds,
                 Err(err) => {
                     warn!("Fan speed calculation failed for group {group_idx}: {err}");
@@ -244,9 +248,12 @@ fn apply_wireless_by_id(
     }
 }
 
+const TEMP_HISTORY_SIZE: usize = 5;
+
 fn calculate_fan_speeds(
     fan_speeds: &[FanSpeed; 4],
     curves: &HashMap<String, FanCurve>,
+    temp_history: &mut HashMap<String, Vec<f32>>,
 ) -> Result<[u8; 4]> {
     let mut pwm_values = [0u8; 4];
 
@@ -258,7 +265,7 @@ fn calculate_fan_speeds(
                     .get(curve_name)
                     .ok_or_else(|| anyhow::anyhow!("Curve '{curve_name}' not found"))?;
 
-                let temp = read_temperature(&curve.temp_command)?;
+                let temp = smoothed_temperature(&curve.temp_command, temp_history)?;
                 let speed_percent = interpolate_curve(&curve.curve, temp);
                 let pwm = (speed_percent * 2.55) as u8;
 
@@ -269,6 +276,40 @@ fn calculate_fan_speeds(
     }
 
     Ok(pwm_values)
+}
+
+/// Read temperature and return a smoothed (median) value from recent history.
+/// Discards readings outside 0..100°C. Falls back to last known median if
+/// the current reading is invalid.
+fn smoothed_temperature(
+    command: &str,
+    history: &mut HashMap<String, Vec<f32>>,
+) -> Result<f32> {
+    let readings = history.entry(command.to_string()).or_default();
+
+    match read_temperature(command) {
+        Ok(temp) if temp > 0.0 && temp <= 100.0 => {
+            readings.push(temp);
+            if readings.len() > TEMP_HISTORY_SIZE {
+                readings.remove(0);
+            }
+        }
+        Ok(temp) => {
+            debug!("Ignoring out-of-range temperature {temp:.1}°C from command");
+        }
+        Err(err) => {
+            debug!("Temperature read failed: {err}");
+        }
+    }
+
+    if readings.is_empty() {
+        anyhow::bail!("no valid temperature readings yet");
+    }
+
+    // Median of recent readings
+    let mut sorted = readings.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Ok(sorted[sorted.len() / 2])
 }
 
 fn read_temperature(command: &str) -> Result<f32> {
@@ -283,7 +324,10 @@ fn read_temperature(command: &str) -> Result<f32> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let temp_str = stdout.split_whitespace().next().unwrap_or("0");
+    let temp_str = stdout
+        .split_whitespace()
+        .next()
+        .context("temperature command returned empty output")?;
     let temp = temp_str
         .parse::<f32>()
         .with_context(|| format!("parsing temperature value '{temp_str}'"))?;
