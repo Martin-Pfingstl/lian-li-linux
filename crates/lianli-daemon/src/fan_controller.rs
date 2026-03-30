@@ -108,9 +108,8 @@ fn fan_control_thread(
 
     info!("Starting fan speed control loop ({} group(s))", config.speeds.len());
 
-    // Rolling temperature history per command for smoothing.
-    // Keeps the last few readings and uses the median to filter out spikes.
-    let mut temp_history: HashMap<String, Vec<f32>> = HashMap::new();
+    // Exponential moving average of temperature per command for smoothing.
+    let mut temp_ema: HashMap<String, f32> = HashMap::new();
 
     // Initialize MB RPM sync state for all wired groups at startup.
     // Groups with MbSync speeds get sync enabled; others get it disabled.
@@ -174,7 +173,7 @@ fn fan_control_thread(
                 continue;
             }
 
-            let speeds = match calculate_fan_speeds(&group.speeds, &curves, &mut temp_history) {
+            let speeds = match calculate_fan_speeds(&group.speeds, &curves, &mut temp_ema) {
                 Ok(speeds) => speeds,
                 Err(err) => {
                     warn!("Fan speed calculation failed for group {group_idx}: {err}");
@@ -248,12 +247,14 @@ fn apply_wireless_by_id(
     }
 }
 
-const TEMP_HISTORY_SIZE: usize = 5;
+/// EMA smoothing factor. Lower = smoother/slower response.
+/// 0.3 means ~70% of the smoothed value comes from history.
+const TEMP_EMA_ALPHA: f32 = 0.3;
 
 fn calculate_fan_speeds(
     fan_speeds: &[FanSpeed; 4],
     curves: &HashMap<String, FanCurve>,
-    temp_history: &mut HashMap<String, Vec<f32>>,
+    temp_ema: &mut HashMap<String, f32>,
 ) -> Result<[u8; 4]> {
     let mut pwm_values = [0u8; 4];
 
@@ -265,7 +266,7 @@ fn calculate_fan_speeds(
                     .get(curve_name)
                     .ok_or_else(|| anyhow::anyhow!("Curve '{curve_name}' not found"))?;
 
-                let temp = smoothed_temperature(&curve.temp_command, temp_history)?;
+                let temp = smoothed_temperature(&curve.temp_command, temp_ema)?;
                 let speed_percent = interpolate_curve(&curve.curve, temp);
                 let pwm = (speed_percent * 2.55) as u8;
 
@@ -278,38 +279,32 @@ fn calculate_fan_speeds(
     Ok(pwm_values)
 }
 
-/// Read temperature and return a smoothed (median) value from recent history.
-/// Discards readings outside 0..100°C. Falls back to last known median if
-/// the current reading is invalid.
+/// Read temperature and return an EMA-smoothed value.
+/// Discards readings outside 0..100°C and falls back to the last
+/// known good value on failure.
 fn smoothed_temperature(
     command: &str,
-    history: &mut HashMap<String, Vec<f32>>,
+    ema: &mut HashMap<String, f32>,
 ) -> Result<f32> {
-    let readings = history.entry(command.to_string()).or_default();
-
     match read_temperature(command) {
         Ok(temp) if temp > 0.0 && temp <= 100.0 => {
-            readings.push(temp);
-            if readings.len() > TEMP_HISTORY_SIZE {
-                readings.remove(0);
-            }
+            let smoothed = match ema.get(command) {
+                Some(&prev) => TEMP_EMA_ALPHA * temp + (1.0 - TEMP_EMA_ALPHA) * prev,
+                None => temp, // first reading, use as-is
+            };
+            ema.insert(command.to_string(), smoothed);
         }
         Ok(temp) => {
-            debug!("Ignoring out-of-range temperature {temp:.1}°C from command");
+            debug!("Ignoring out-of-range temperature {temp:.1}°C");
         }
         Err(err) => {
             debug!("Temperature read failed: {err}");
         }
     }
 
-    if readings.is_empty() {
-        anyhow::bail!("no valid temperature readings yet");
-    }
-
-    // Median of recent readings
-    let mut sorted = readings.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    Ok(sorted[sorted.len() / 2])
+    ema.get(command)
+        .copied()
+        .context("no valid temperature readings yet")
 }
 
 fn read_temperature(command: &str) -> Result<f32> {

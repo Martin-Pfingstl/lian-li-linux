@@ -278,6 +278,12 @@ pub static KNOWN_DEVICES: &[DeviceEntry] = &[
         hid_usage_page: None,
     },
     DeviceEntry {
+        id: UsbId::new(0x1A86, 0xAD23),
+        family: DeviceFamily::HydroShift2LcdDesktop,
+        name: "HydroShift II LCD Square (Desktop Mode)",
+        hid_usage_page: None,
+    },
+    DeviceEntry {
         id: UsbId::new(0x1A86, 0xACD1),
         family: DeviceFamily::Lancool207Desktop,
         name: "Lancool 207 Digital (Desktop Mode)",
