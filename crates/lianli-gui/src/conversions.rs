@@ -274,20 +274,34 @@ pub fn build_clamp_segments(sorted: &[(f32, f32)]) -> Vec<super::CurveSegment> {
     segs
 }
 
-pub fn fan_curve_to_slint(curve: &FanCurve) -> super::FanCurveData {
-    // Points in original order (pidx matches curve.curve index)
+pub fn fan_curve_to_slint(
+    curve: &FanCurve,
+    sensors: &[lianli_shared::sensors::SensorInfo],
+) -> super::FanCurveData {
     let points: Vec<super::CurvePoint> = curve
         .curve
         .iter()
         .map(|&(temp, speed)| super::CurvePoint { temp, speed })
         .collect();
 
-    // Sort only for path/clamp generation
     let mut sorted: Vec<(f32, f32)> = curve.curve.clone();
     sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
+    let (display, index) = if let Some(ref source) = curve.temp_source {
+        match sensors.iter().position(|s| &s.source == source) {
+            Some(idx) => (sensors[idx].display_name.clone(), idx as i32),
+            None => ("Custom command".to_string(), sensors.len() as i32),
+        }
+    } else if !curve.temp_command.is_empty() {
+        ("Custom command".to_string(), sensors.len() as i32)
+    } else {
+        ("Custom command".to_string(), sensors.len() as i32)
+    };
+
     super::FanCurveData {
         name: SharedString::from(&curve.name),
+        temp_source_display: SharedString::from(&display),
+        temp_source_index: index,
         temp_command: SharedString::from(&curve.temp_command),
         points: ModelRc::new(VecModel::from(points)),
         curve_segments: ModelRc::new(VecModel::from(build_curve_segments(&sorted))),
@@ -295,8 +309,22 @@ pub fn fan_curve_to_slint(curve: &FanCurve) -> super::FanCurveData {
     }
 }
 
-pub fn fan_curves_to_model(curves: &[FanCurve]) -> ModelRc<super::FanCurveData> {
-    let items: Vec<_> = curves.iter().map(fan_curve_to_slint).collect();
+pub fn fan_curves_to_model(
+    curves: &[FanCurve],
+    sensors: &[lianli_shared::sensors::SensorInfo],
+) -> ModelRc<super::FanCurveData> {
+    let items: Vec<_> = curves.iter().map(|c| fan_curve_to_slint(c, sensors)).collect();
+    ModelRc::new(VecModel::from(items))
+}
+
+pub fn sensor_options_model(
+    sensors: &[lianli_shared::sensors::SensorInfo],
+) -> ModelRc<SharedString> {
+    let mut items: Vec<SharedString> = sensors
+        .iter()
+        .map(|s| SharedString::from(&s.display_name))
+        .collect();
+    items.push(SharedString::from("Custom command"));
     ModelRc::new(VecModel::from(items))
 }
 

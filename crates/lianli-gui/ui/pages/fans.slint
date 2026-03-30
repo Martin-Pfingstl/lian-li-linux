@@ -8,6 +8,8 @@ export { CurvePoint, CurveSegment }
 
 export struct FanCurveData {
     name: string,
+    temp-source-display: string,
+    temp-source-index: int,
     temp-command: string,
     points: [CurvePoint],
     curve-segments: [CurveSegment],
@@ -35,8 +37,10 @@ export struct FanGroupData {
 component FanCurveCard inherits Card {
     in property <int> index;
     in property <FanCurveData> curve;
+    in property <[string]> sensor-options: [];
 
     callback rename(int, string);
+    callback set-temp-source(int, string);
     callback set-temp-command(int, string);
     callback remove-curve(int);
     callback point-moved(int, int, float, float);
@@ -60,10 +64,22 @@ component FanCurveCard inherits Card {
             }
         }
 
-        // Temp command
+        // Temp source selector
         HorizontalLayout {
             spacing: 8px;
-            Text { text: "Temp cmd:"; font-size: 12px; color: Theme.text-secondary; vertical-alignment: center; }
+            Text { text: "Sensor:"; font-size: 12px; color: Theme.text-secondary; vertical-alignment: center; }
+            ComboBox {
+                horizontal-stretch: 1;
+                model: root.sensor-options;
+                current-value: root.curve.temp-source-display;
+                selected(val) => { root.set-temp-source(root.index, val); }
+            }
+        }
+
+        // Show command editor only for custom command
+        if root.curve.temp-source-display == "Custom command": HorizontalLayout {
+            spacing: 8px;
+            Text { text: "Command:"; font-size: 12px; color: Theme.text-secondary; vertical-alignment: center; }
             LineEdit {
                 horizontal-stretch: 1;
                 text: root.curve.temp-command;
@@ -212,12 +228,14 @@ export component FansPage inherits VerticalLayout {
     in property <[FanGroupData]> fan-groups: [];
     in property <[string]> curve-names: [];
     in property <[string]> speed-options: [];
+    in property <[string]> sensor-options: [];
     in property <int> update-interval: 1000;
     in property <bool> has-config: false;
 
     callback add-curve();
     callback remove-curve(int);
     callback rename-curve(int, string);
+    callback set-temp-source(int, string);
     callback set-temp-command(int, string);
     callback point-moved(int, int, float, float);
     callback point-added(int, float, float);
@@ -272,7 +290,9 @@ export component FansPage inherits VerticalLayout {
                 for curve-data[cidx] in root.fan-curves: FanCurveCard {
                     index: cidx;
                     curve: curve-data;
+                    sensor-options: root.sensor-options;
                     rename(idx, name) => { root.rename-curve(idx, name); }
+                    set-temp-source(idx, val) => { root.set-temp-source(idx, val); }
                     set-temp-command(idx, cmd) => { root.set-temp-command(idx, cmd); }
                     remove-curve(idx) => { root.remove-curve(idx); }
                     point-moved(cidx2, pidx, temp, speed) => { root.point-moved(cidx2, pidx, temp, speed); }

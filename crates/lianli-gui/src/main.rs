@@ -582,6 +582,35 @@ fn wire_fan_callbacks(
 
     {
         let shared = shared.clone();
+        let weak = window.as_weak();
+        window.on_fan_set_temp_source(move |idx, display_name| {
+            let display = display_name.to_string();
+            {
+                let mut state = shared.lock().unwrap();
+                let source = if display == "Custom command" {
+                    None
+                } else {
+                    state
+                        .available_sensors
+                        .iter()
+                        .find(|s| s.display_name == display)
+                        .map(|s| s.source.clone())
+                };
+                if let Some(ref mut c) = state.config {
+                    if let Some(curve) = c.fan_curves.get_mut(idx as usize) {
+                        curve.temp_source = source;
+                        if curve.temp_source.is_some() {
+                            curve.temp_command.clear();
+                        }
+                    }
+                }
+            }
+            refresh_fan_ui(&weak, &shared);
+        });
+    }
+
+    {
+        let shared = shared.clone();
         window.on_fan_set_temp_command(move |idx, cmd| {
             let mut state = shared.lock().unwrap();
             if let Some(ref mut c) = state.config {
@@ -1008,19 +1037,24 @@ fn wire_lcd_callbacks(
 // These read from SharedState (lock briefly), then push models to UI via invoke_from_event_loop.
 
 fn refresh_fan_ui(weak: &slint::Weak<MainWindow>, shared: &Shared) {
-    let (curves, fans, devices) = {
+    let (curves, fans, devices, sensors) = {
         let state = shared.lock().unwrap();
         let config = match state.config.as_ref() {
             Some(c) => c,
             None => return,
         };
-        (config.fan_curves.clone(), config.fans.clone(), state.devices.clone())
+        (
+            config.fan_curves.clone(),
+            config.fans.clone(),
+            state.devices.clone(),
+            state.available_sensors.clone(),
+        )
     };
 
     let weak = weak.clone();
     slint::invoke_from_event_loop(move || {
         if let Some(w) = weak.upgrade() {
-            w.set_fan_curves(conversions::fan_curves_to_model(&curves));
+            w.set_fan_curves(conversions::fan_curves_to_model(&curves, &sensors));
             w.set_curve_names(conversions::curve_names_to_model(&curves));
             w.set_fan_speed_options(conversions::speed_options_model(&curves, true));
             w.set_config_dirty(true);

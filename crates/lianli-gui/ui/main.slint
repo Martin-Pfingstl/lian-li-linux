@@ -50,6 +50,7 @@ export component MainWindow inherits Window {
     in property <[FanGroupData]> fan-groups: [];
     in property <[string]> curve-names: [];
     in property <[string]> fan-speed-options: [];
+    in property <[string]> sensor-options: [];
     in property <int> fan-update-interval: 1000;
 
     // Callbacks for Rust backend
@@ -86,6 +87,7 @@ export component MainWindow inherits Window {
     callback fan-add-curve();
     callback fan-remove-curve(int);
     callback fan-rename-curve(int, string);
+    callback fan-set-temp-source(int, string);
     callback fan-set-temp-command(int, string);
     callback fan-point-moved(int, int, float, float);
     callback fan-point-added(int, float, float);
@@ -135,11 +137,13 @@ export component MainWindow inherits Window {
                 fan-groups: root.fan-groups;
                 curve-names: root.curve-names;
                 speed-options: root.fan-speed-options;
+                sensor-options: root.sensor-options;
                 update-interval: root.fan-update-interval;
                 has-config: root.has-config;
                 add-curve => { root.fan-add-curve(); }
                 remove-curve(idx) => { root.fan-remove-curve(idx); }
                 rename-curve(idx, name) => { root.fan-rename-curve(idx, name); }
+                set-temp-source(idx, val) => { root.fan-set-temp-source(idx, val); }
                 set-temp-command(idx, cmd) => { root.fan-set-temp-command(idx, cmd); }
                 point-moved(cidx, pidx, temp, speed) => { root.fan-point-moved(cidx, pidx, temp, speed); }
                 point-added(cidx, temp, speed) => { root.fan-point-added(cidx, temp, speed); }

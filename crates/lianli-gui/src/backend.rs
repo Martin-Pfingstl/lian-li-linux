@@ -232,12 +232,18 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
         .and_then(ipc_client::unwrap_response)
         .unwrap_or_default();
 
+    let sensors: Vec<lianli_shared::sensors::SensorInfo> =
+        ipc_client::send_request(&IpcRequest::ListSensors)
+            .and_then(ipc_client::unwrap_response)
+            .unwrap_or_default();
+
     // Update shared state
     {
         let mut state = shared.lock().unwrap();
         state.config = config.clone();
         state.rgb_caps = rgb_caps.clone();
         state.devices = devices.clone();
+        state.available_sensors = sensors.clone();
     }
 
     if let Some(config) = config {
@@ -274,12 +280,13 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
                 w.set_lcd_device_options(lcd_opts);
 
                 // Fan curves
-                let curves_model = conversions::fan_curves_to_model(&config.fan_curves);
+                let curves_model = conversions::fan_curves_to_model(&config.fan_curves, &sensors);
                 w.set_fan_curves(curves_model);
                 let names_model = conversions::curve_names_to_model(&config.fan_curves);
                 w.set_curve_names(names_model);
                 let speed_opts = conversions::speed_options_model(&config.fan_curves, true);
                 w.set_fan_speed_options(speed_opts);
+                w.set_sensor_options(conversions::sensor_options_model(&sensors));
                 w.set_fan_update_interval(fan_update_interval);
 
                 // Fan groups

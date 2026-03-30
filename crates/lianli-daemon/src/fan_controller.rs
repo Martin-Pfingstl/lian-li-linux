@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use lianli_devices::traits::FanDevice;
 use lianli_devices::wireless::WirelessController;
 use lianli_shared::fan::{FanConfig, FanCurve, FanSpeed};
+use lianli_shared::sensors::{self, ResolvedSensor, TempSource};
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -108,8 +108,8 @@ fn fan_control_thread(
 
     info!("Starting fan speed control loop ({} group(s))", config.speeds.len());
 
-    // Exponential moving average of temperature per command for smoothing.
-    let mut temp_ema: HashMap<String, f32> = HashMap::new();
+    let mut temp_ema: HashMap<TempSource, f32> = HashMap::new();
+    let mut sensor_cache: HashMap<TempSource, ResolvedSensor> = HashMap::new();
 
     // Initialize MB RPM sync state for all wired groups at startup.
     // Groups with MbSync speeds get sync enabled; others get it disabled.
@@ -173,7 +173,7 @@ fn fan_control_thread(
                 continue;
             }
 
-            let speeds = match calculate_fan_speeds(&group.speeds, &curves, &mut temp_ema) {
+            let speeds = match calculate_fan_speeds(&group.speeds, &curves, &mut sensor_cache, &mut temp_ema) {
                 Ok(speeds) => speeds,
                 Err(err) => {
                     warn!("Fan speed calculation failed for group {group_idx}: {err}");
@@ -254,7 +254,8 @@ const TEMP_EMA_ALPHA: f32 = 0.3;
 fn calculate_fan_speeds(
     fan_speeds: &[FanSpeed; 4],
     curves: &HashMap<String, FanCurve>,
-    temp_ema: &mut HashMap<String, f32>,
+    sensor_cache: &mut HashMap<TempSource, ResolvedSensor>,
+    temp_ema: &mut HashMap<TempSource, f32>,
 ) -> Result<[u8; 4]> {
     let mut pwm_values = [0u8; 4];
 
@@ -266,7 +267,8 @@ fn calculate_fan_speeds(
                     .get(curve_name)
                     .ok_or_else(|| anyhow::anyhow!("Curve '{curve_name}' not found"))?;
 
-                let temp = smoothed_temperature(&curve.temp_command, temp_ema)?;
+                let source = curve.effective_source();
+                let temp = smoothed_temperature(&source, sensor_cache, temp_ema)?;
                 let speed_percent = interpolate_curve(&curve.curve, temp);
                 let pwm = (speed_percent * 2.55) as u8;
 
@@ -279,59 +281,40 @@ fn calculate_fan_speeds(
     Ok(pwm_values)
 }
 
-/// Read temperature and return an EMA-smoothed value.
-/// Discards readings outside 0..100°C and falls back to the last
-/// known good value on failure.
 fn smoothed_temperature(
-    command: &str,
-    ema: &mut HashMap<String, f32>,
+    source: &TempSource,
+    cache: &mut HashMap<TempSource, ResolvedSensor>,
+    ema: &mut HashMap<TempSource, f32>,
 ) -> Result<f32> {
-    match read_temperature(command) {
+    let resolved = match cache.get(source) {
+        Some(r) => r.clone(),
+        None => {
+            let r = sensors::resolve_sensor(source).context("sensor not found")?;
+            cache.insert(source.clone(), r.clone());
+            r
+        }
+    };
+
+    match sensors::read_sensor_temp(&resolved) {
         Ok(temp) if temp > 0.0 && temp <= 100.0 => {
-            let smoothed = match ema.get(command) {
+            let smoothed = match ema.get(source) {
                 Some(&prev) => TEMP_EMA_ALPHA * temp + (1.0 - TEMP_EMA_ALPHA) * prev,
-                None => temp, // first reading, use as-is
+                None => temp,
             };
-            ema.insert(command.to_string(), smoothed);
+            ema.insert(source.clone(), smoothed);
         }
         Ok(temp) => {
             debug!("Ignoring out-of-range temperature {temp:.1}°C");
         }
         Err(err) => {
-            debug!("Temperature read failed: {err}");
+            debug!("Sensor read failed: {err}");
+            cache.remove(source);
         }
     }
 
-    ema.get(command)
+    ema.get(source)
         .copied()
         .context("no valid temperature readings yet")
-}
-
-fn read_temperature(command: &str) -> Result<f32> {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .output()
-        .context("executing temperature command")?;
-
-    if !output.status.success() {
-        anyhow::bail!("temperature command failed with status {}", output.status);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let temp_str = stdout
-        .split_whitespace()
-        .next()
-        .context("temperature command returned empty output")?;
-    let temp = temp_str
-        .parse::<f32>()
-        .with_context(|| format!("parsing temperature value '{temp_str}'"))?;
-
-    if !temp.is_finite() {
-        anyhow::bail!("temperature value '{temp}' is not finite");
-    }
-
-    Ok(temp)
 }
 
 fn interpolate_curve(curve: &[(f32, f32)], temp: f32) -> f32 {
