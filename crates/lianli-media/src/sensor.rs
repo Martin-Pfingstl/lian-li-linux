@@ -129,7 +129,7 @@ impl SensorAsset {
             label_offset: descriptor.label_offset,
             screen: *screen,
             previous_value: Mutex::new("N/A".into()),
-            frame_index: 0.into(),
+            frame_index: 1.into(),
         }))
     }
 

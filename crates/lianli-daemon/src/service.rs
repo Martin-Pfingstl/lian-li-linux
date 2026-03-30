@@ -1141,7 +1141,6 @@ impl ServiceManager {
             .map(|(id, _)| *id);
 
         if let Some(id) = target_id {
-            // 2. retrieve target mutable
             if let Some(target) = self.targets.get_mut(&id) {
                 match target.send_frame(&self.wireless, &mut self.packet_builder) {
                     Ok(true) => {

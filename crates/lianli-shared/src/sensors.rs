@@ -212,7 +212,8 @@ pub fn read_sensor_temp(resolved: &ResolvedSensor) -> anyhow::Result<f32> {
                 .args([
                     "--query-gpu=temperature.gpu",
                     "--format=csv,noheader,nounits",
-                    &format!("-i {index}"),
+                    "-i",
+                    &index.to_string(),
                 ])
                 .output()
                 .map_err(|e| anyhow::anyhow!("nvidia-smi: {e}"))?;
