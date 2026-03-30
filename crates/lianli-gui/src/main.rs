@@ -847,6 +847,25 @@ fn wire_lcd_callbacks(
             {
                 let mut state = shared.lock().unwrap();
                 let devices = state.devices.clone();
+                let resolved_sensor_source: Option<lianli_shared::media::SensorSourceConfig> = {
+                    let val_str = val.to_string();
+                    if field_str == "sensor_source" && val_str != "Custom command" {
+                        state.available_sensors.iter()
+                            .find(|s| s.display_name == val_str)
+                            .map(|si| match &si.source {
+                                lianli_shared::sensors::TempSource::Hwmon { name, label, device_path } =>
+                                    lianli_shared::media::SensorSourceConfig::Hwmon {
+                                        name: name.clone(), label: label.clone(), device_path: device_path.clone(),
+                                    },
+                                lianli_shared::sensors::TempSource::NvidiaGpu { gpu_index } =>
+                                    lianli_shared::media::SensorSourceConfig::NvidiaGpu { gpu_index: *gpu_index },
+                                lianli_shared::sensors::TempSource::Command { cmd } =>
+                                    lianli_shared::media::SensorSourceConfig::Command { cmd: cmd.clone() },
+                            })
+                    } else {
+                        None
+                    }
+                };
                 if let Some(ref mut c) = state.config {
                     let idx = idx as usize;
                     if let Some(lcd) = c.lcds.get_mut(idx) {
@@ -880,6 +899,17 @@ fn wire_lcd_callbacks(
                             }
                             "sensor_unit" => {
                                 lcd.sensor.get_or_insert_with(default_sensor).unit = val;
+                            }
+                            "sensor_source" => {
+                                let sensor_cfg = lcd.sensor.get_or_insert_with(default_sensor);
+                                if let Some(source) = resolved_sensor_source {
+                                    sensor_cfg.source = source;
+                                } else {
+                                    sensor_cfg.source =
+                                        lianli_shared::media::SensorSourceConfig::Command {
+                                            cmd: String::new(),
+                                        };
+                                }
                             }
                             "sensor_command" => {
                                 lcd.sensor.get_or_insert_with(default_sensor).source =
@@ -1066,10 +1096,10 @@ fn refresh_fan_ui(weak: &slint::Weak<MainWindow>, shared: &Shared) {
 }
 
 fn refresh_lcd_ui(weak: &slint::Weak<MainWindow>, shared: &Shared) {
-    let (lcds, devices) = {
+    let (lcds, devices, sensors) = {
         let state = shared.lock().unwrap();
         match state.config.as_ref() {
-            Some(c) => (c.lcds.clone(), state.devices.clone()),
+            Some(c) => (c.lcds.clone(), state.devices.clone(), state.available_sensors.clone()),
             None => return,
         }
     };
@@ -1077,7 +1107,7 @@ fn refresh_lcd_ui(weak: &slint::Weak<MainWindow>, shared: &Shared) {
     let weak = weak.clone();
     slint::invoke_from_event_loop(move || {
         if let Some(w) = weak.upgrade() {
-            w.set_lcd_entries(conversions::lcd_entries_to_model(&lcds, &devices));
+            w.set_lcd_entries(conversions::lcd_entries_to_model(&lcds, &devices, &sensors));
             w.set_config_dirty(true);
         }
     })

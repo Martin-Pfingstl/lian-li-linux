@@ -112,19 +112,33 @@ fn media_type_to_string(mt: &MediaType) -> &'static str {
     }
 }
 
-pub fn lcd_to_slint(lcd: &LcdConfig, devices: &[DeviceInfo]) -> super::LcdEntryData {
+pub fn lcd_to_slint(
+    lcd: &LcdConfig,
+    devices: &[DeviceInfo],
+    sensors: &[lianli_shared::sensors::SensorInfo],
+) -> super::LcdEntryData {
     let sensor = lcd.sensor.as_ref();
 
-    let cmd = sensor.map(|s| match &s.source {
-        lianli_shared::media::SensorSourceConfig::Command { cmd } => cmd.clone(),
-        lianli_shared::media::SensorSourceConfig::Constant { value } => format!("{value}"),
-        lianli_shared::media::SensorSourceConfig::Hwmon { name, label, .. } => {
-            format!("{name} / {label}")
-        }
-        lianli_shared::media::SensorSourceConfig::NvidiaGpu { gpu_index } => {
-            format!("NVIDIA GPU {gpu_index}")
-        }
-    }).unwrap_or_default();
+    let (source_display, cmd) = sensor
+        .map(|s| match &s.source {
+            lianli_shared::media::SensorSourceConfig::Command { cmd } => {
+                ("Custom command".to_string(), cmd.clone())
+            }
+            lianli_shared::media::SensorSourceConfig::Constant { value } => {
+                ("Custom command".to_string(), format!("{value}"))
+            }
+            lianli_shared::media::SensorSourceConfig::Hwmon { .. }
+            | lianli_shared::media::SensorSourceConfig::NvidiaGpu { .. } => {
+                let ts = s.source.to_temp_source();
+                let display = sensors
+                    .iter()
+                    .find(|si| si.source == ts)
+                    .map(|si| si.display_name.clone())
+                    .unwrap_or_else(|| "Custom command".to_string());
+                (display, String::new())
+            }
+        })
+        .unwrap_or_else(|| ("Custom command".to_string(), String::new()));
 
     let text_color = sensor.map(|s| s.text_color).unwrap_or([255, 255, 255]);
     let bg_color = sensor.map(|s| s.background_color).unwrap_or([0, 0, 0]);
@@ -157,6 +171,7 @@ pub fn lcd_to_slint(lcd: &LcdConfig, devices: &[DeviceInfo]) -> super::LcdEntryD
         rgb_b: b as i32,
         sensor_label: SharedString::from(sensor.map(|s| s.label.as_str()).unwrap_or("")),
         sensor_unit: SharedString::from(sensor.map(|s| s.unit.as_str()).unwrap_or("")),
+        sensor_source_display: SharedString::from(&source_display),
         sensor_command: SharedString::from(&cmd),
         sensor_font_path: SharedString::from(sensor.and_then(|s| s.font_path.as_ref()).map(|p| p.display().to_string()).unwrap_or_default()),
         sensor_decimal_places: sensor.map(|s| s.decimal_places as i32).unwrap_or(0),
@@ -185,8 +200,12 @@ pub fn lcd_to_slint(lcd: &LcdConfig, devices: &[DeviceInfo]) -> super::LcdEntryD
     }
 }
 
-pub fn lcd_entries_to_model(lcds: &[LcdConfig], devices: &[DeviceInfo]) -> ModelRc<super::LcdEntryData> {
-    let items: Vec<_> = lcds.iter().map(|l| lcd_to_slint(l, devices)).collect();
+pub fn lcd_entries_to_model(
+    lcds: &[LcdConfig],
+    devices: &[DeviceInfo],
+    sensors: &[lianli_shared::sensors::SensorInfo],
+) -> ModelRc<super::LcdEntryData> {
+    let items: Vec<_> = lcds.iter().map(|l| lcd_to_slint(l, devices, sensors)).collect();
     ModelRc::new(VecModel::from(items))
 }
 

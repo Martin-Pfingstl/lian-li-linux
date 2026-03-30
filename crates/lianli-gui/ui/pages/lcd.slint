@@ -28,6 +28,7 @@ export struct LcdEntryData {
     // Sensor fields
     sensor-label: string,
     sensor-unit: string,
+    sensor-source-display: string,
     sensor-command: string,
     sensor-font-path: string,
     sensor-decimal-places: int,
@@ -85,6 +86,7 @@ component LcdConfigCard inherits Card {
     in property <LcdEntryData> lcd;
     in property <[string]> media-types: ["Image", "Video", "GIF", "Solid Color", "Sensor Gauge"];
     in property <[string]> device-options: [];
+    in property <[string]> sensor-options: [];
 
     callback remove(int);
     callback update-field(int, string, string);
@@ -223,10 +225,20 @@ component LcdConfigCard inherits Card {
                 }
             }
 
-            // Source command
+            // Sensor source
             VerticalLayout {
                 spacing: 4px;
-                Text { text: "Source Command"; font-size: 11px; color: Theme.text-secondary; }
+                Text { text: "Sensor Source"; font-size: 11px; color: Theme.text-secondary; }
+                ComboBox {
+                    model: root.sensor-options;
+                    current-value: root.lcd.sensor-source-display;
+                    selected(val) => { root.update-field(root.index, "sensor_source", val); }
+                }
+            }
+
+            if root.lcd.sensor-source-display == "Custom command": VerticalLayout {
+                spacing: 4px;
+                Text { text: "Command"; font-size: 11px; color: Theme.text-secondary; }
                 LineEdit {
                     text: root.lcd.sensor-command;
                     placeholder-text: "sensors | awk ...";
@@ -491,6 +503,7 @@ component LcdConfigCard inherits Card {
 export component LcdPage inherits VerticalLayout {
     in property <[LcdEntryData]> lcd-entries: [];
     in property <[string]> device-options: [];
+    in property <[string]> sensor-options: [];
     in property <bool> has-config: false;
 
     callback add-lcd();
@@ -553,6 +566,7 @@ export component LcdPage inherits VerticalLayout {
                 index: idx;
                 lcd: lcd-entry;
                 device-options: root.device-options;
+                sensor-options: root.sensor-options;
                 remove(i) => { root.remove-lcd(i); }
                 update-field(i, field, val) => { root.update-lcd-field(i, field, val); }
                 pick-file(i) => { root.pick-lcd-file(i); }

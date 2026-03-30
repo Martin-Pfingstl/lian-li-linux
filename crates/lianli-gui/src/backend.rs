@@ -274,7 +274,7 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
                 w.set_hid_driver(slint::SharedString::from(hid_driver));
 
                 // LCD entries
-                let lcd_model = conversions::lcd_entries_to_model(&config.lcds, &devices);
+                let lcd_model = conversions::lcd_entries_to_model(&config.lcds, &devices, &sensors);
                 w.set_lcd_entries(lcd_model);
                 let lcd_opts = conversions::lcd_device_options(&devices);
                 w.set_lcd_device_options(lcd_opts);

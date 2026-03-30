@@ -124,6 +124,7 @@ export component MainWindow inherits Window {
             if root.current-page == 1: LcdPage {
                 lcd-entries: root.lcd-entries;
                 device-options: root.lcd-device-options;
+                sensor-options: root.sensor-options;
                 has-config: root.has-config;
                 add-lcd => { root.add-lcd(); }
                 remove-lcd(idx) => { root.remove-lcd(idx); }
