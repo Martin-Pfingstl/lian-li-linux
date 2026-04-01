@@ -425,7 +425,12 @@ impl ServiceManager {
             if is_aio {
                 rpms.push(dev.fan_rpms[3]); // pump RPM
             }
-            ipc_state.telemetry.fan_rpms.insert(device_id, rpms);
+            ipc_state.telemetry.fan_rpms.insert(device_id.clone(), rpms);
+
+            if let Some(temp) = dev.coolant_temp_c {
+                ipc_state.telemetry.coolant_temps.insert(device_id.clone(), temp as f32);
+                lianli_shared::sensors::write_coolant_temp(&device_id, temp as f32);
+            }
         }
 
         // Add unbound wireless devices (visible but not controllable until bound)

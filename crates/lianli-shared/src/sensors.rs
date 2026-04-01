@@ -18,6 +18,9 @@ pub enum TempSource {
     Command {
         cmd: String,
     },
+    WirelessCoolant {
+        device_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +35,8 @@ pub enum ResolvedSensor {
     SysfsFile(PathBuf),
     NvidiaGpu(u32),
     ShellCommand(String),
+    /// Runtime file written by daemon, contains plain °C value (not millidegrees).
+    RuntimeFile(PathBuf),
 }
 
 pub fn enumerate_sensors() -> Vec<SensorInfo> {
@@ -193,6 +198,14 @@ pub fn resolve_sensor(source: &TempSource) -> Option<ResolvedSensor> {
         }
         TempSource::NvidiaGpu { gpu_index } => Some(ResolvedSensor::NvidiaGpu(*gpu_index)),
         TempSource::Command { cmd } => Some(ResolvedSensor::ShellCommand(cmd.clone())),
+        TempSource::WirelessCoolant { device_id } => {
+            let path = coolant_runtime_path(device_id);
+            if path.exists() {
+                Some(ResolvedSensor::RuntimeFile(path))
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -227,6 +240,15 @@ pub fn read_sensor_temp(resolved: &ResolvedSensor) -> anyhow::Result<f32> {
                 .map_err(|e| anyhow::anyhow!("parsing nvidia-smi output: {e}"))?;
             Ok(temp)
         }
+        ResolvedSensor::RuntimeFile(path) => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
+            let temp: f32 = content
+                .trim()
+                .parse()
+                .map_err(|e| anyhow::anyhow!("parsing {}: {e}", path.display()))?;
+            Ok(temp)
+        }
         ResolvedSensor::ShellCommand(cmd) => {
             let output = Command::new("sh")
                 .arg("-c")
@@ -259,6 +281,20 @@ struct RawHwmonEntry {
     device_path: Option<String>,
     sysfs_path: PathBuf,
     temp: Option<f32>,
+}
+
+/// Runtime path for a wireless coolant temperature file.
+pub fn coolant_runtime_path(device_id: &str) -> PathBuf {
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+        .unwrap_or_else(|_| "/tmp".to_string());
+    let sanitized = device_id.replace(':', "-");
+    PathBuf::from(format!("{runtime_dir}/lianli-coolant-{sanitized}"))
+}
+
+/// Write a coolant temperature value to the runtime file.
+pub fn write_coolant_temp(device_id: &str, temp_c: f32) {
+    let path = coolant_runtime_path(device_id);
+    let _ = std::fs::write(&path, format!("{temp_c}"));
 }
 
 fn read_sysfs_temp(path: &Path) -> Option<f32> {

@@ -217,6 +217,8 @@ pub struct DiscoveredDevice {
     pub fan_type: WirelessFanType,
     /// Index in the discovery list (used for video mode prep)
     pub list_index: u8,
+    /// Coolant temperature in °C (WaterBlock/WaterBlock2 only, from byte 27)
+    pub coolant_temp_c: Option<u8>,
 }
 
 impl DiscoveredDevice {
@@ -243,9 +245,12 @@ impl fmt::Display for DiscoveredDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mac = self.mac_str();
         if self.fan_type.is_aio() {
+            let temp_str = self.coolant_temp_c
+                .map(|t| format!(", coolant={t}°C"))
+                .unwrap_or_default();
             write!(
                 f,
-                "{} ({:?}, {} fans, pump={}rpm, ch={}, rx={})",
+                "{} ({:?}, {} fans, pump={}rpm{temp_str}, ch={}, rx={})",
                 mac, self.fan_type, self.fan_count,
                 self.fan_rpms[3], self.channel, self.rx_type,
             )
@@ -272,7 +277,8 @@ impl fmt::Display for DiscoveredDevice {
 /// [18]    Device type (0=fan, 65=LC217, 255=master)
 /// [19]    Fan count
 /// [20-23] Effect index (4 bytes)
-/// [24-27] Fan type bytes (4 bytes, per-slot)
+/// [24-26] Fan type bytes (3 bytes, per-slot)
+/// [27]    Coolant temperature °C (WaterBlock/WaterBlock2 only)
 /// [28-35] Fan speeds (4x u16 big-endian RPM)
 /// [36-39] Current PWM (4 bytes)
 /// [40]    Command sequence number
@@ -341,6 +347,13 @@ fn parse_device_record(data: &[u8], list_index: u8) -> Option<DiscoveredDevice> 
             .unwrap_or(WirelessFanType::Unknown),
     };
 
+    // Byte 27 contains coolant temperature for AIO devices
+    let coolant_temp_c = if fan_type.is_aio() && data[27] > 0 {
+        Some(data[27])
+    } else {
+        None
+    };
+
     Some(DiscoveredDevice {
         mac,
         master_mac,
@@ -354,6 +367,7 @@ fn parse_device_record(data: &[u8], list_index: u8) -> Option<DiscoveredDevice> 
         cmd_seq,
         fan_type,
         list_index,
+        coolant_temp_c,
     })
 }
 

@@ -128,7 +128,8 @@ pub fn lcd_to_slint(
                 ("Custom command".to_string(), format!("{value}"))
             }
             lianli_shared::media::SensorSourceConfig::Hwmon { .. }
-            | lianli_shared::media::SensorSourceConfig::NvidiaGpu { .. } => {
+            | lianli_shared::media::SensorSourceConfig::NvidiaGpu { .. }
+            | lianli_shared::media::SensorSourceConfig::WirelessCoolant { .. } => {
                 let ts = s.source.to_temp_source();
                 let display = sensors
                     .iter()

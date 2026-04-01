@@ -158,7 +158,23 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
         IpcRequest::Ping => IpcResponse::ok(serde_json::json!("pong")),
 
         IpcRequest::ListSensors => {
-            let sensors = lianli_shared::sensors::enumerate_sensors();
+            let mut sensors = lianli_shared::sensors::enumerate_sensors();
+            // Add wireless coolant sensors from live telemetry
+            let ipc_state = state.lock();
+            for (device_id, temp) in &ipc_state.telemetry.coolant_temps {
+                let display = ipc_state.devices.iter()
+                    .find(|d| d.device_id == *device_id)
+                    .map(|d| format!("{} (Coolant)", d.name))
+                    .unwrap_or_else(|| format!("{device_id} (Coolant)"));
+                sensors.push(lianli_shared::sensors::SensorInfo {
+                    source: lianli_shared::sensors::TempSource::WirelessCoolant {
+                        device_id: device_id.clone(),
+                    },
+                    display_name: display,
+                    current_temp: Some(*temp),
+                });
+            }
+            drop(ipc_state);
             IpcResponse::ok(&sensors)
         }
 

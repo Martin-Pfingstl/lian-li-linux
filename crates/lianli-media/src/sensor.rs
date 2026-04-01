@@ -77,7 +77,8 @@ impl SensorAsset {
             SensorSourceConfig::Constant { value } => SensorSource::Constant(value.clamp(0.0, 100.0)),
             SensorSourceConfig::Command { .. }
             | SensorSourceConfig::Hwmon { .. }
-            | SensorSourceConfig::NvidiaGpu { .. } => {
+            | SensorSourceConfig::NvidiaGpu { .. }
+            | SensorSourceConfig::WirelessCoolant { .. } => {
                 let temp_source = descriptor.source.to_temp_source();
                 match lianli_shared::sensors::resolve_sensor(&temp_source) {
                     Some(resolved) => SensorSource::Resolved(resolved),

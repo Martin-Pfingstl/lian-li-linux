@@ -27,6 +27,10 @@ pub enum SensorSourceConfig {
         #[serde(default)]
         gpu_index: u32,
     },
+    #[serde(rename = "wireless_coolant")]
+    WirelessCoolant {
+        device_id: String,
+    },
 }
 
 impl SensorSourceConfig {
@@ -47,6 +51,9 @@ impl SensorSourceConfig {
             },
             Self::NvidiaGpu { gpu_index } => crate::sensors::TempSource::NvidiaGpu {
                 gpu_index: *gpu_index,
+            },
+            Self::WirelessCoolant { device_id } => crate::sensors::TempSource::WirelessCoolant {
+                device_id: device_id.clone(),
             },
         }
     }
@@ -122,6 +129,11 @@ impl SensorDescriptor {
                 }
             }
             SensorSourceConfig::NvidiaGpu { .. } => {}
+            SensorSourceConfig::WirelessCoolant { device_id } => {
+                if device_id.trim().is_empty() {
+                    anyhow::bail!("wireless coolant device_id must not be empty");
+                }
+            }
         }
 
         if self.update_interval_ms == 0 {

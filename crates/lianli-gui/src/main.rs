@@ -861,6 +861,8 @@ fn wire_lcd_callbacks(
                                     lianli_shared::media::SensorSourceConfig::NvidiaGpu { gpu_index: *gpu_index },
                                 lianli_shared::sensors::TempSource::Command { cmd } =>
                                     lianli_shared::media::SensorSourceConfig::Command { cmd: cmd.clone() },
+                                lianli_shared::sensors::TempSource::WirelessCoolant { device_id } =>
+                                    lianli_shared::media::SensorSourceConfig::WirelessCoolant { device_id: device_id.clone() },
                             })
                     } else {
                         None
