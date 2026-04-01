@@ -32,11 +32,11 @@
 |--------|:-----------:|:---:|:---:|:----:|:------:|
 | UNI FAN TL V2 (LCD / LED) | Yes | Yes | 400x400 | - | Yes |
 | UNI FAN SL V3 (LCD / LED) | Yes | Yes | 400x400 | - | Yes |
-| UNI FAN SL-INF | Yes | Yes | - | - | - |
+| UNI FAN SL-INF | Yes | Yes | - | - | Yes |
 | UNI FAN CL / RL120 | Yes | Yes | - | - | - |
-| HydroShift Wireless AIO | Yes | Yes | - | Yes | - |
-| HydroShift II Wireless AIO | Yes | Yes | - | Yes | - |
-| Strimer Plus Wireless | - | Yes | - | - | - |
+| HydroShift Wireless AIO | Yes | Yes | - | Yes | Yes|
+| HydroShift II Wireless AIO | Yes | Yes | - | Yes | Yes |
+| Strimer Plus Wireless | - | Yes | - | - | Yes |
 | Lancool 217 Wireless | - | Yes | - | - | - |
 | Lancool V150 Wireless | Yes | Yes | - | - | - |
 | Universal Screen 8.8" Wireless | - | Yes | - | - | - |
@@ -65,7 +65,7 @@ Devices stuck in desktop/display mode are detected and can be switched back to L
 |--------|:---:|:------:|
 | Strimer Plus (wired) | Yes | - |
 
-If you've tested a device that isn't marked above, please [open an issue or PR](https://github.com/sgtaziz/lian-li-linux/issues) to update this table.
+If you've tested a device that isn't marked as tested above, please [open an issue or PR](https://github.com/sgtaziz/lian-li-linux/issues) to update this table.
 
 ## Architecture
 
