@@ -41,11 +41,9 @@
 | Lancool V150 Wireless | Yes | Yes | - | - | - |
 | Universal Screen 8.8" Wireless | - | Yes | - | - | - |
 
-Both V1 (VID 0x0416) and V2 (VID 0x1A86) wireless dongles are supported.
+Both V1 (VID 0x0416) and V2 (VID 0x1A86) wireless dongles are supported. Binding devices is supported through the GUI.
 
-> **Note:** Wireless fans must be bound to a Wireless dongle using L-Connect 3 on Windows before they can be used here. If you don't have a Windows install, you can run L-Connect 3 in a VM and pass the USB dongle through to pair your devices. This is only required 1 time if you have never configured your fans on Windows.
-
-> **Note 2:** Wireless devices with LCDs still need to be plugged in via USB to control the LCD. LCD cannot be controlled through wireless dongle alone.
+> **Note:** Wireless devices with LCDs still need to be plugged in via USB to control the LCD. LCD cannot be controlled through wireless dongle alone.
 
 ### USB (Standalone LCD)
 
