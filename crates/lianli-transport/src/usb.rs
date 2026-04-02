@@ -72,6 +72,14 @@ impl UsbTransport {
                 self.handle.reset()?;
                 info!("{name} USB reset successful, retrying");
                 std::thread::sleep(Duration::from_millis(500));
+                // Kernel driver may re-attach after reset
+                match self.handle.kernel_driver_active(0) {
+                    Ok(true) => {
+                        let _ = self.handle.detach_kernel_driver(0);
+                        debug!("Detached kernel driver from {name} after reset");
+                    }
+                    _ => {}
+                }
                 match self.handle.set_active_configuration(1) {
                     Ok(()) | Err(rusb::Error::Busy) | Err(rusb::Error::NotFound) => {}
                     Err(e) => return Err(e.into()),
@@ -89,6 +97,16 @@ impl UsbTransport {
                 self.handle.reset()?;
                 info!("{name} USB reset successful");
                 std::thread::sleep(Duration::from_millis(500));
+                // Kernel driver may re-attach after reset — detach again
+                match self.handle.kernel_driver_active(0) {
+                    Ok(true) => {
+                        self.handle.detach_kernel_driver(0)?;
+                        debug!("Detached kernel driver from {name} after reset");
+                    }
+                    Ok(false) => {}
+                    Err(rusb::Error::NotSupported) => {}
+                    Err(e) => return Err(e.into()),
+                }
                 self.handle.claim_interface(0)?;
                 let _ = self.handle.set_alternate_setting(0, 0);
             }
