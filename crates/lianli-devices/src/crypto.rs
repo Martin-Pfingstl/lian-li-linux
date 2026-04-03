@@ -161,6 +161,12 @@ impl PacketBuilder {
         self.build_winusb(CMD_GET_VER, &[])
     }
 
+    pub fn start_play_header_winusb(&mut self, chunk_len: usize, is_last: bool) -> Vec<u8> {
+        let mut params = (chunk_len as u32).to_be_bytes().to_vec();
+        params.push(if is_last { 1 } else { 0 });
+        self.build_winusb(CMD_START_PLAY, &params)
+    }
+
     pub fn query_block_header_winusb(&mut self) -> Vec<u8> {
         self.build_winusb(CMD_QUERY_BLOCK, &[])
     }

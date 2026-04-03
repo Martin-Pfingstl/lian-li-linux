@@ -9,8 +9,10 @@ pub use sensor::SensorAsset;
 use lianli_shared::config::{ConfigKey, LcdConfig};
 use lianli_shared::media::MediaType;
 use lianli_shared::screen::ScreenInfo;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tempfile::TempDir;
 
 
 #[derive(Debug, Clone)]
@@ -31,6 +33,11 @@ pub enum MediaAssetKind {
     Sensor {
         asset: Arc<SensorAsset>,
     },
+    H264Stream {
+        path: PathBuf,
+        looping: bool,
+        _temp: Arc<TempDir>,
+    },
 }
 
 // Implementation for comparison for MediaAsset
@@ -47,6 +54,7 @@ pub fn prepare_media_asset(
     cfg: &LcdConfig,
     default_fps: f32,
     screen: &ScreenInfo,
+    h264: bool,
 ) -> Result<MediaAssetKind, MediaError> {
     match cfg.media_type {
         MediaType::Image => {
@@ -61,6 +69,16 @@ pub fn prepare_media_asset(
             let frame = image::build_color_frame(rgb, screen);
             Ok(MediaAssetKind::Static {
                 frame: Arc::new(frame),
+            })
+        }
+        MediaType::Video | MediaType::Gif if h264 => {
+            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig("video/gif entry requires a 'path' field".into()))?;
+            let fps = cfg.fps.unwrap_or(default_fps).max(1.0);
+            let (h264_path, temp) = video::encode_h264(path, fps, cfg.orientation, screen)?;
+            Ok(MediaAssetKind::H264Stream {
+                path: h264_path,
+                looping: true,
+                _temp: Arc::new(temp),
             })
         }
         MediaType::Video => {

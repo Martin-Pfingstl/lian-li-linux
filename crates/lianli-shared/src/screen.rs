@@ -9,6 +9,7 @@ pub struct ScreenInfo {
     pub jpeg_quality: u8,
     pub max_payload: usize,
     pub device_rotation: u16,
+    pub h264: bool,
 }
 
 impl ScreenInfo {
@@ -20,6 +21,7 @@ impl ScreenInfo {
         jpeg_quality: 90,
         max_payload: 102_400 - 512,
         device_rotation: 0,
+        h264: false,
     };
 
     pub const TLLCD: Self = Self {
@@ -29,6 +31,7 @@ impl ScreenInfo {
         jpeg_quality: 90,
         max_payload: 65_535,
         device_rotation: 0,
+        h264: false,
     };
 
     pub const AIO_LCD_480: Self = Self {
@@ -38,6 +41,7 @@ impl ScreenInfo {
         jpeg_quality: 85,
         max_payload: 153_600,
         device_rotation: 0,
+        h264: false,
     };
 
     pub const HYDROSHIFT2: Self = Self {
@@ -47,9 +51,9 @@ impl ScreenInfo {
         jpeg_quality: 85,
         max_payload: 153_600,
         device_rotation: 0,
+        h264: true,
     };
 
-    /// Lancool 207: renders at 1472x720 landscape, rotated 90° CW for device.
     pub const LANCOOL_207: Self = Self {
         width: 1472,
         height: 720,
@@ -57,6 +61,7 @@ impl ScreenInfo {
         jpeg_quality: 95,
         max_payload: 512_000,
         device_rotation: 90,
+        h264: true,
     };
 
     pub const UNIVERSAL_SCREEN: Self = Self {
@@ -66,6 +71,7 @@ impl ScreenInfo {
         jpeg_quality: 80,
         max_payload: 512_000,
         device_rotation: 0,
+        h264: true,
     };
 }
 

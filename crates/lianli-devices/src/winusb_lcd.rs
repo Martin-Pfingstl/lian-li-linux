@@ -148,6 +148,72 @@ impl WinUsbLcdDevice {
         Ok(())
     }
 
+    const H264_CHUNK_SIZE: usize = 202_752;
+
+    /// Stream a raw H264 file in chunks via StartPlay (0x79).
+    /// Loops the file if `looping` is true. Runs until `stop` is set.
+    pub fn stream_h264(
+        &mut self,
+        path: &std::path::Path,
+        looping: bool,
+        stop: &std::sync::atomic::AtomicBool,
+    ) -> Result<()> {
+        use std::io::{Read, Seek};
+        use std::sync::atomic::Ordering;
+
+        if !self.initialized {
+            self.do_init()?;
+        }
+
+        let mut file = std::fs::File::open(path).context("opening h264 file")?;
+        let mut file_buf = vec![0u8; Self::H264_CHUNK_SIZE];
+
+        loop {
+            let n = file.read(&mut file_buf).context("reading h264 chunk")?;
+            if n == 0 {
+                if looping && !stop.load(Ordering::Relaxed) {
+                    file.seek(std::io::SeekFrom::Start(0))?;
+                    continue;
+                }
+                break;
+            }
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let is_last = {
+                let pos = file.stream_position()?;
+                let len = file.metadata()?.len();
+                pos >= len
+            };
+
+            let header = self.builder.start_play_header_winusb(n, is_last);
+            let mut packet = vec![0u8; 512 + n];
+            packet[..512].copy_from_slice(&header);
+            packet[512..512 + n].copy_from_slice(&file_buf[..n]);
+
+            if let Err(e) = self.transport.write(&packet, LCD_WRITE_TIMEOUT) {
+                warn!("H264 chunk write failed: {e}, resetting transport");
+                self.reinit_transport();
+                self.transport
+                    .write(&packet, LCD_WRITE_TIMEOUT)
+                    .context("h264 chunk write (retry)")?;
+            }
+
+            let resp = self.read_response("h264 chunk", LCD_READ_TIMEOUT);
+
+            std::thread::sleep(Duration::from_millis(30));
+
+            if let Some(buf) = resp {
+                if buf[8] > 3 {
+                    self.wait_buffer(2);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Set LCD brightness (0-100).
     pub fn set_brightness_val(&mut self, brightness: u8) -> Result<()> {
         let header = self.builder.brightness_header_winusb(brightness);

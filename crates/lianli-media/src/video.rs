@@ -87,6 +87,64 @@ pub fn build_gif_frames(
     Ok((encoded, durations))
 }
 
+pub fn encode_h264(
+    input: &Path,
+    fps: f32,
+    orientation: f32,
+    screen: &ScreenInfo,
+) -> Result<(std::path::PathBuf, tempfile::TempDir), MediaError> {
+    let temp = TempDir::new()?;
+    let output = temp.path().join("stream.h264");
+
+    let w = screen.width;
+    let h = screen.height;
+    let mut vf_parts = vec![format!("scale={w}:{h}:flags=lanczos")];
+    if screen.device_rotation == 90 {
+        vf_parts.push("transpose=1".into());
+    } else if screen.device_rotation == 180 {
+        vf_parts.push("transpose=1,transpose=1".into());
+    } else if screen.device_rotation == 270 {
+        vf_parts.push("transpose=2".into());
+    }
+    let rot = (orientation % 360.0 + 360.0) % 360.0;
+    if (rot - 90.0).abs() < 1.0 {
+        vf_parts.push("transpose=1".into());
+    } else if (rot - 180.0).abs() < 1.0 {
+        vf_parts.push("transpose=1,transpose=1".into());
+    } else if (rot - 270.0).abs() < 1.0 {
+        vf_parts.push("transpose=2".into());
+    }
+    let vf = vf_parts.join(",");
+
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-loglevel", "error",
+            "-stream_loop", "-1",
+            "-i", input.to_str().unwrap(),
+            "-t", "30",
+            "-vf", &vf,
+            "-r", &fps.to_string(),
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-tune", "zerolatency",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            "-f", "h264",
+            output.to_str().unwrap(),
+        ])
+        .status()
+        .map_err(MediaError::Io)?;
+
+    if !status.success() {
+        return Err(MediaError::Ffmpeg(format!(
+            "ffmpeg h264 encode exited with status {status}"
+        )));
+    }
+
+    Ok((output, temp))
+}
+
 fn run_ffmpeg(
     input: &Path,
     fps: f32,

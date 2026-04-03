@@ -874,7 +874,7 @@ impl ServiceManager {
                     .and_then(|s| screen_map.get(s).copied())
                     .unwrap_or(ScreenInfo::WIRELESS_LCD);
                 let cfg_key = config_identity(device);
-                match prepare_media_asset(device, cfg.default_fps, &screen) {
+                match prepare_media_asset(device, cfg.default_fps, &screen, screen.h264) {
                     Ok(asset_kind) => {
                         let device_id = device.device_id();
                         let asset = MediaAsset{kind: asset_kind, config_key: cfg_key};
@@ -1245,18 +1245,22 @@ impl LcdBackend {
 enum LcdThreadMsg {
     Frame(Vec<u8>),
     FrameVerified(Vec<u8>, std::sync::mpsc::SyncSender<anyhow::Result<()>>),
+    StreamH264 { path: PathBuf, looping: bool },
     SwitchDesktop(std::sync::mpsc::SyncSender<anyhow::Result<()>>),
     Stop,
 }
 
 struct ThreadedWinUsbSender {
     tx: std::sync::mpsc::SyncSender<LcdThreadMsg>,
+    h264_stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl ThreadedWinUsbSender {
     fn new(mut device: WinUsbLcdDevice, index: usize) -> Self {
         let (tx, rx) = std::sync::mpsc::sync_channel::<LcdThreadMsg>(2);
+        let h264_stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = Arc::clone(&h264_stop);
         let thread = thread::spawn(move || {
             for msg in rx {
                 match msg {
@@ -1268,6 +1272,12 @@ impl ThreadedWinUsbSender {
                     LcdThreadMsg::FrameVerified(data, reply) => {
                         let result = device.send_frame_verified(&data);
                         let _ = reply.send(result);
+                    }
+                    LcdThreadMsg::StreamH264 { path, looping } => {
+                        stop_clone.store(false, Ordering::Relaxed);
+                        if let Err(e) = device.stream_h264(&path, looping, &stop_clone) {
+                            warn!("LCD[{index}] h264 stream error: {e}");
+                        }
                     }
                     LcdThreadMsg::SwitchDesktop(reply) => {
                         let result = device.switch_to_desktop_mode();
@@ -1281,8 +1291,17 @@ impl ThreadedWinUsbSender {
         });
         Self {
             tx,
+            h264_stop,
             thread: Some(thread),
         }
+    }
+
+    fn stream_h264(&self, path: PathBuf, looping: bool) -> anyhow::Result<()> {
+        self.h264_stop.store(true, Ordering::Relaxed);
+        self.tx
+            .send(LcdThreadMsg::StreamH264 { path, looping })
+            .map_err(|_| anyhow::anyhow!("LCD sender thread exited"))?;
+        Ok(())
     }
 
     fn send_frame(&self, frame: &[u8]) -> anyhow::Result<()> {
@@ -1323,6 +1342,7 @@ impl ThreadedWinUsbSender {
     }
 
     fn stop(&mut self) {
+        self.h264_stop.store(true, Ordering::Relaxed);
         let _ = self.tx.send(LcdThreadMsg::Stop);
         if let Some(t) = self.thread.take() {
             let _ = t.join();
@@ -1385,6 +1405,19 @@ impl ActiveTarget {
         wireless: &WirelessController,
         builder: &mut PacketBuilder,
     ) -> Result<bool, SendError> {
+        // H264: start the stream on the LCD thread, then it runs autonomously
+        if let MediaRuntime::H264 { path, looping, started } = &mut self.media {
+            if !*started {
+                if let LcdBackend::WinUsb(ref sender) = self.lcd {
+                    sender.stream_h264(path.clone(), *looping).map_err(|e| {
+                        SendError::Other(e)
+                    })?;
+                    *started = true;
+                }
+            }
+            return Ok(true);
+        }
+
         let is_static = matches!(self.media, MediaRuntime::Static { .. });
         let frame = match self.media.next_frame_bytes() {
             Some(bytes) => bytes,
@@ -1415,7 +1448,7 @@ enum MediaRuntime {
         frame: Arc<Vec<u8>>,
     },
     Video {
-        #[allow(dead_code)] // We do not read the player, we only store it
+        #[allow(dead_code)]
         player: Arc<AsyncVideoPlayer>,
         frames: Arc<Vec<Vec<u8>>>,
         sent_frame_index: usize,
@@ -1424,6 +1457,11 @@ enum MediaRuntime {
         renderer: Arc<AsyncSensorRenderer>,
         cached_frame: Vec<u8>,
         sent_frame_index: usize,
+    },
+    H264 {
+        path: PathBuf,
+        looping: bool,
+        started: bool,
     },
 }
 
@@ -1612,6 +1650,11 @@ impl MediaRuntime {
                     sent_frame_index: 0,
                 }
             }
+            MediaAssetKind::H264Stream { path, looping, .. } => Self::H264 {
+                path: path.clone(),
+                looping: *looping,
+                started: false,
+            },
         }
     }
 
@@ -1641,6 +1684,7 @@ impl MediaRuntime {
                 *sent_frame_index = rendered_frame_index;
                 Some(cached_frame.as_slice())
             }
+            MediaRuntime::H264 { .. } => None,
         }
     }
 }
