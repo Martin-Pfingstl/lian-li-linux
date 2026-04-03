@@ -1,7 +1,7 @@
 use cbc::Encryptor;
 use des::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use des::Des;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 const DES_KEY: [u8; 8] = *b"slv3tuzx";
 
@@ -26,12 +26,16 @@ pub const CMD_SWITCH_TO_DESKTOP: u8 = 0x96;
 /// All VID=0x1CBE devices (SLV3, TLV2, HydroShift II, Lancool 207, Universal Screen)
 /// share this exact same encrypted 512-byte header format.
 pub struct PacketBuilder {
+    start_time: Instant,
     last_timestamp: u32,
 }
 
 impl PacketBuilder {
     pub fn new() -> Self {
-        Self { last_timestamp: 0 }
+        Self {
+            start_time: Instant::now(),
+            last_timestamp: 0,
+        }
     }
 
     /// Build a 512-byte encrypted header with raw parameter bytes at offset 8+.
@@ -41,10 +45,7 @@ impl PacketBuilder {
         buf[2] = 0x1A;
         buf[3] = 0x6D;
 
-        let raw = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as u32;
+        let raw = self.start_time.elapsed().as_millis() as u32;
         let ts = if raw <= self.last_timestamp {
             self.last_timestamp + 1
         } else {
@@ -106,10 +107,7 @@ impl PacketBuilder {
         buf[2] = 0x1A;
         buf[3] = 0x6D;
 
-        let raw = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as u32;
+        let raw = self.start_time.elapsed().as_millis() as u32;
         let ts = if raw <= self.last_timestamp {
             self.last_timestamp + 1
         } else {
