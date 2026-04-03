@@ -1305,6 +1305,7 @@ impl ThreadedWinUsbSender {
     }
 
     fn send_frame(&self, frame: &[u8]) -> anyhow::Result<()> {
+        self.h264_stop.store(true, Ordering::Relaxed);
         match self.tx.try_send(LcdThreadMsg::Frame(frame.to_vec())) {
             Ok(()) => Ok(()),
             Err(std::sync::mpsc::TrySendError::Full(_)) => {
@@ -1318,6 +1319,7 @@ impl ThreadedWinUsbSender {
     }
 
     fn switch_to_desktop_mode(&mut self) -> anyhow::Result<()> {
+        self.h264_stop.store(true, Ordering::Relaxed);
         let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
         self.tx
             .send(LcdThreadMsg::SwitchDesktop(reply_tx))
@@ -1332,6 +1334,7 @@ impl ThreadedWinUsbSender {
     }
 
     fn send_frame_verified(&self, frame: &[u8]) -> anyhow::Result<()> {
+        self.h264_stop.store(true, Ordering::Relaxed);
         let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
         self.tx
             .send(LcdThreadMsg::FrameVerified(frame.to_vec(), reply_tx))

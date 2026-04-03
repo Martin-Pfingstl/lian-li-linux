@@ -206,6 +206,8 @@ impl WinUsbLcdDevice {
             }
         }
 
+        self.transport.read_flush();
+        self.initialized = false;
         Ok(())
     }
 
@@ -375,7 +377,7 @@ impl WinUsbLcdDevice {
     fn query_block(&mut self) -> Option<u8> {
         let header = self.builder.query_block_header_winusb();
         self.transport.write(&header, LCD_WRITE_TIMEOUT).ok()?;
-        let resp = self.read_response("QueryBlock", LCD_READ_TIMEOUT)?;
+        let resp = self.read_response("QueryBlock", Duration::from_millis(200))?;
         Some(resp[8])
     }
 

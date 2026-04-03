@@ -70,7 +70,7 @@ impl ScreenInfo {
         max_fps: 30,
         jpeg_quality: 95,
         max_payload: 512_000,
-        device_rotation: 90,
+        device_rotation: 0,
         h264: true,
     };
 }
