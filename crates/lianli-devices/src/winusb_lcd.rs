@@ -84,6 +84,10 @@ impl WinUsbLcdDevice {
         &self.serial
     }
 
+    pub fn transport_release(&self) {
+        self.transport.release();
+    }
+
     /// Send a JPEG frame to the LCD.
     pub fn send_frame(&mut self, frame: &[u8]) -> Result<()> {
         if frame.len() > self.screen.max_payload {

@@ -1011,15 +1011,18 @@ impl ServiceManager {
                     }
                     DeviceFamily::HydroShift2Lcd => {
                         let device = Device::clone(candidate.usb_device.as_ref().unwrap());
-                        lianli_devices::hydroshift2_lcd::open(device).map(LcdBackend::WinUsb)
+                        lianli_devices::hydroshift2_lcd::open(device)
+                            .map(|d| LcdBackend::WinUsb(ThreadedWinUsbSender::new(d, cfg_idx)))
                     }
                     DeviceFamily::Lancool207 => {
                         let device = Device::clone(candidate.usb_device.as_ref().unwrap());
-                        lianli_devices::lancool207::open(device).map(LcdBackend::WinUsb)
+                        lianli_devices::lancool207::open(device)
+                            .map(|d| LcdBackend::WinUsb(ThreadedWinUsbSender::new(d, cfg_idx)))
                     }
                     DeviceFamily::UniversalScreen => {
                         let device = Device::clone(candidate.usb_device.as_ref().unwrap());
-                        lianli_devices::universal_screen::open(device).map(LcdBackend::WinUsb)
+                        lianli_devices::universal_screen::open(device)
+                            .map(|d| LcdBackend::WinUsb(ThreadedWinUsbSender::new(d, cfg_idx)))
                     }
                     DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => {
                         // Try to reuse a shared HID backend (opened by init_rgb_controller).
@@ -1205,7 +1208,7 @@ impl ServiceManager {
 
 enum LcdBackend {
     Slv3(Slv3LcdDevice),
-    WinUsb(WinUsbLcdDevice),
+    WinUsb(ThreadedWinUsbSender),
     HidLcd(HydroShiftLcdController),
 }
 
@@ -1236,6 +1239,100 @@ impl LcdBackend {
             Self::WinUsb(d) => d.send_frame_verified(frame),
             _ => self.send_frame(wireless, builder, frame),
         }
+    }
+}
+
+enum LcdThreadMsg {
+    Frame(Vec<u8>),
+    FrameVerified(Vec<u8>, std::sync::mpsc::SyncSender<anyhow::Result<()>>),
+    SwitchDesktop(std::sync::mpsc::SyncSender<anyhow::Result<()>>),
+    Stop,
+}
+
+struct ThreadedWinUsbSender {
+    tx: std::sync::mpsc::SyncSender<LcdThreadMsg>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl ThreadedWinUsbSender {
+    fn new(mut device: WinUsbLcdDevice, index: usize) -> Self {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<LcdThreadMsg>(2);
+        let thread = thread::spawn(move || {
+            for msg in rx {
+                match msg {
+                    LcdThreadMsg::Frame(data) => {
+                        if let Err(e) = device.send_frame(&data) {
+                            warn!("LCD[{index}] sender thread frame error: {e}");
+                        }
+                    }
+                    LcdThreadMsg::FrameVerified(data, reply) => {
+                        let result = device.send_frame_verified(&data);
+                        let _ = reply.send(result);
+                    }
+                    LcdThreadMsg::SwitchDesktop(reply) => {
+                        let result = device.switch_to_desktop_mode();
+                        let _ = reply.send(result);
+                        break;
+                    }
+                    LcdThreadMsg::Stop => break,
+                }
+            }
+            device.transport_release();
+        });
+        Self {
+            tx,
+            thread: Some(thread),
+        }
+    }
+
+    fn send_frame(&self, frame: &[u8]) -> anyhow::Result<()> {
+        match self.tx.try_send(LcdThreadMsg::Frame(frame.to_vec())) {
+            Ok(()) => Ok(()),
+            Err(std::sync::mpsc::TrySendError::Full(_)) => {
+                debug!("LCD sender busy, dropping frame");
+                Ok(())
+            }
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                anyhow::bail!("LCD sender thread exited")
+            }
+        }
+    }
+
+    fn switch_to_desktop_mode(&mut self) -> anyhow::Result<()> {
+        let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
+        self.tx
+            .send(LcdThreadMsg::SwitchDesktop(reply_tx))
+            .map_err(|_| anyhow::anyhow!("LCD sender thread exited"))?;
+        let result = reply_rx
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|_| anyhow::anyhow!("LCD sender thread timeout"))?;
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+        result
+    }
+
+    fn send_frame_verified(&self, frame: &[u8]) -> anyhow::Result<()> {
+        let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
+        self.tx
+            .send(LcdThreadMsg::FrameVerified(frame.to_vec(), reply_tx))
+            .map_err(|_| anyhow::anyhow!("LCD sender thread exited"))?;
+        reply_rx
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|_| anyhow::anyhow!("LCD sender thread timeout"))?
+    }
+
+    fn stop(&mut self) {
+        let _ = self.tx.send(LcdThreadMsg::Stop);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+impl Drop for ThreadedWinUsbSender {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
