@@ -680,7 +680,9 @@ pub fn get_mem_usage(content: &str) -> f32 {
     let mem_total = extract_mem_value(content, "MemTotal:");
     let mem_avail = extract_mem_value(content, "MemAvailable:");
     if let (Some(total), Some(avail)) = (mem_total, mem_avail) {
-        return 100.0 - avail * 100.0 / total;
+        if total > 0.0 {
+            return 100.0 - avail * 100.0 / total;
+        }
     }
     0.0
 }

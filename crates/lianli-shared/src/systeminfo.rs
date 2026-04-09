@@ -45,7 +45,7 @@ impl SysSensor {
             let cores: Vec<u32> = s
                 .per_core_usage
                 .iter()
-                .map(|c| (c.load(Ordering::Relaxed) / 100) as u32)
+                .map(|c| c.load(Ordering::Relaxed))
                 .collect();
 
             cores
