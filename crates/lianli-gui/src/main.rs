@@ -903,8 +903,9 @@ fn wire_lcd_callbacks(
                                     }
                                     "Sensor Gauge" => {
                                         lcd.sensor.get_or_insert_with(default_sensor);
+                                        lcd.path = None;
                                         lianli_shared::media::MediaType::Sensor
-                                    } 
+                                    }
                                     _ => lcd.media_type,
                                 };
                             }
