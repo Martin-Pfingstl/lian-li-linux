@@ -27,6 +27,10 @@ pub enum SensorSource {
     WirelessCoolant {
         device_id: String,
     },
+    CpuUsage,
+    MemUsage,
+    MemUsed,
+    MemFree,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,15 +95,14 @@ impl SensorInfo {
 
 #[derive(Debug, Clone)]
 pub enum ResolvedSensor {
-    SysfsFile { 
-        path: PathBuf, 
-        device_path: String, // from SensorSource, used in order to define what to read from the sysfsfile: basic hwmon entries are easy, just read the file, it contains a number. But the file /proc/meminfo contains more than just a number
+    SysfsFile {
+        path: PathBuf,
         divider: usize,
     },
     NvidiaGpu(u32),
     ShellCommand(String),
-    /// Runtime file written by daemon, contains plain °C value (not millidegrees).
     RuntimeFile(PathBuf),
+    Virtual { source: SensorSource, divider: usize },
 }
 
 pub fn enumerate_sensors() -> Vec<SensorInfo> {
@@ -111,58 +114,34 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
 
     let gpu_names = get_amd_gpu_names();
 
-    // First of all, add some default sensors:
-    // CPU Usage
     sensors.push(SensorInfo {
-        source: SensorSource::Hwmon {
-            name: "CPU".to_string(),
-            label: "Usage".to_string(),
-            device_path: "direct:cpu_usage".to_string(),
-        },
-        sensor_name: Some(SensorName { device_name: "CPU".to_string(), sensor_name: "Usage".to_string() }),
-        display_name: None,
+        source: SensorSource::CpuUsage,
+        sensor_name: None,
+        display_name: Some("CPU: Usage".to_string()),
         divider: 100,
         unit: Unit::PERCENT,
         current_value: Some(0.0),
     });
-
-    // RAM Usage in percent
     sensors.push(SensorInfo {
-        source: SensorSource::Hwmon {
-            name: "RAM".to_string(),
-            label: "Usage".to_string(),
-            device_path: "direct:mem_usage".to_string(),
-        },
-        sensor_name: Some(SensorName { device_name: "RAM".to_string(), sensor_name:"Usage".to_string() }),
-        display_name: None,
+        source: SensorSource::MemUsage,
+        sensor_name: None,
+        display_name: Some("RAM: Usage".to_string()),
         divider: 1,
         unit: Unit::PERCENT,
         current_value: Some(0.0),
     });
-
-    // RAM Used in MB
     sensors.push(SensorInfo {
-        source: SensorSource::Hwmon {
-            name: "RAM".to_string(),
-            label: "Used".to_string(),
-            device_path: "direct:mem_used".to_string(),
-        },
-        sensor_name: Some(SensorName { device_name: "RAM".to_string(), sensor_name:"Used".to_string() }),
-        display_name: None,
+        source: SensorSource::MemUsed,
+        sensor_name: None,
+        display_name: Some("RAM: Used".to_string()),
         divider: 1024 * 1024,
         unit: Unit::SIZE,
         current_value: Some(0.0),
     });
-
-    // RAM Free in MB
     sensors.push(SensorInfo {
-        source: SensorSource::Hwmon {
-            name: "RAM".to_string(),
-            label: "Free".to_string(),
-            device_path: "direct:mem_free".to_string(),
-        },
-        sensor_name: Some(SensorName { device_name: "RAM".to_string(), sensor_name:"Free".to_string() }),
-        display_name: None,
+        source: SensorSource::MemFree,
+        sensor_name: None,
+        display_name: Some("RAM: Free".to_string()),
         divider: 1024 * 1024,
         unit: Unit::SIZE,
         current_value: Some(0.0),
@@ -193,13 +172,13 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
             let pci_id = get_pci_id_from_path(path.clone());
             let pci_id_stripped = pci_id.strip_prefix("0000:").unwrap_or(&pci_id).to_string();
 
-            (display_name, mem_idx, gfx_idx) = get_display_name(&path, &pci_id_stripped, &gpu_names, mem_idx, gfx_idx);
-
-            if display_name == "ignore" {
-                // This element is to ignore (for example ACPI thermal zone is a quite unreliable temperature sensor, so omitting it is recommended)
-                // I know, this is not rustic, but it works for me!!
-                continue;
-            }
+            let result = get_display_name(&path, &pci_id_stripped, &gpu_names, mem_idx, gfx_idx);
+            mem_idx = result.1;
+            gfx_idx = result.2;
+            let display_name = match result.0 {
+                Some(name) => name,
+                None => continue,
+            };
 
 
             let device_path = std::fs::read_link(path.join("device"))
@@ -220,7 +199,7 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
                             .unwrap_or_else(|_| "".to_string());
                         let display_label = get_label_name(prefix, &label);
                         let (unit, divider) = get_unit(prefix);
-                        let value = read_sysfs_file(&file.path());
+                        let value = read_sysfs_file(&file.path()).map(|v| v / divider as f32);
                         let sensor_name = Some(SensorName { device_name: display_name.clone(), sensor_name: display_label });
                         let device_path = if let Some(dev) = &device_path {
                             if dev.starts_with("DEADBEEF") { // virtual devices (for example my motherboard from Gigabyte links to "DEADBEEF-2001-0000-00A0-C90629100000")
@@ -460,114 +439,114 @@ pub fn get_display_name(
     gpu_names: &HashMap<String, String>,
     mem_idx: usize,
     gfx_idx: usize,
-) -> (String, usize, usize) {
+) -> (Option<String>, usize, usize) {
     // First of all, check for file device/model and return that in case it exists and contains something
     // This will display for example the type and name of the nvme-SSD
     let model_path = hwmon_path.join("device").join("model");
 
     if let Ok(model_name) = std::fs::read_to_string(model_path) {
-        return (model_name.trim().to_string(), mem_idx, gfx_idx);
+        return (Some(model_name.trim().to_string()), mem_idx, gfx_idx);
     }
 
-    // Fallback: Read the normal 'name' file
-    // Path: /sys/class/hwmon/hwmonX/name
     if let Ok(generic_name) = std::fs::read_to_string(hwmon_path.join("name")) {
         let name = generic_name.trim();
-        // If the name is only "nvme", then make it a little prettier
         if name == "nvme" {
-            return ("NVMe Storage Device".to_string(), mem_idx, gfx_idx);
+            return (Some("NVMe Storage Device".to_string()), mem_idx, gfx_idx);
         }
-        // AMD processors have k10temp, Intel have coretemp
         if name == "k10temp" || name == "coretemp" {
-            return ("CPU".to_string(), mem_idx, gfx_idx);
+            return (Some("CPU".to_string()), mem_idx, gfx_idx);
         }
-        // AMD gpus (internal or external) are named amdgpu
         if name == "amdgpu" {
-            if gfx_idx > 0 {
-                // The first graphics card is the main card. If there is a second graphics card, then it's the internal graphics chip, which is of no interest as not used.
-                // Well, if somebody has more than one PCI graphics card, then we won't display the second one, I know, but in most cases the second one is just the internal graphics chip.
-                return ("ignore".to_string(), mem_idx, gfx_idx);
+            if let Some(gpu_name) = gpu_names.get(pci_id_stripped) {
+                return (Some(gpu_name.clone()), mem_idx, gfx_idx + 1);
             }
-            if let Some(name) = gpu_names.get(pci_id_stripped) {
-                return (name.clone(), mem_idx, gfx_idx + 1);
-            }
+            return (Some(format!("AMD GPU {}", gfx_idx)), mem_idx, gfx_idx + 1);
         }
-        // NVidia gpus either don't appear at all, or appear as nouveau (if that driver is used)
         if name == "nouveau" {
-            return ("NVidia GPU".to_string(), mem_idx, gfx_idx + 1);
+            return (Some("NVidia GPU".to_string()), mem_idx, gfx_idx + 1);
         }
         let common_drivers = ["nct", "it8", "f71", "gigabyte_wmi", "w83"];
         if common_drivers.iter().any(|&d| name.starts_with(d)) {
-            return ("Motherboard".to_string(), mem_idx, gfx_idx);
+            return (Some("Motherboard".to_string()), mem_idx, gfx_idx);
         }
         if name.starts_with("spd") {
-            return (format!("DDR5 RAM Module {}",mem_idx+1), mem_idx + 1, gfx_idx);
+            return (Some(format!("DDR5 RAM Module {}", mem_idx + 1)), mem_idx + 1, gfx_idx);
         }
         if name.starts_with("ee1004") {
-            return (format!("DDR4 RAM Module {}",mem_idx+1), mem_idx + 1, gfx_idx);
+            return (Some(format!("DDR4 RAM Module {}", mem_idx + 1)), mem_idx + 1, gfx_idx);
         }
         if name.starts_with("jc42") {
-            return (format!("DDR3/ECC RAM Module {}",mem_idx+1), mem_idx + 1, gfx_idx);
+            return (Some(format!("DDR3/ECC RAM Module {}", mem_idx + 1)), mem_idx + 1, gfx_idx);
         }
         if name == "acpitz" {
-            // Notoriously inaccurate sensor: ACPI Thermal Zone, best to just ignore it...
-            return ("ignore".to_string(), mem_idx, gfx_idx);
+            return (None, mem_idx, gfx_idx);
         }
 
-        (name.to_string(), mem_idx, gfx_idx)
+        (Some(name.to_string()), mem_idx, gfx_idx)
     } else {
-        ("Unknown Device".to_string(), mem_idx, gfx_idx)
+        (Some("Unknown Device".to_string()), mem_idx, gfx_idx)
     }
 }
 
 pub fn resolve_sensor(source: &SensorSource, divider: usize) -> Option<ResolvedSensor> {
     match source {
+        SensorSource::CpuUsage | SensorSource::MemUsage
+        | SensorSource::MemUsed | SensorSource::MemFree => {
+            Some(ResolvedSensor::Virtual { source: source.clone(), divider })
+        }
         SensorSource::Hwmon {
-            name: _,
+            name,
             label,
             device_path,
         } => {
-            if device_path == "direct:cpu_usage" {
-                return Some(ResolvedSensor::SysfsFile { path: Path::new("/sys/class/hwmon").to_path_buf(), device_path: device_path.clone(), divider });
-            } else if device_path=="direct:mem_usage" {
-                return Some(ResolvedSensor::SysfsFile { path: Path::new("/proc/meminfo").to_path_buf(), device_path: device_path.clone(), divider });
-            } else if device_path=="direct:mem_used" {
-                return Some(ResolvedSensor::SysfsFile { path: Path::new("/proc/meminfo").to_path_buf(), device_path: device_path.clone(), divider });
-            } else if device_path=="direct:mem_free" {
-                return Some(ResolvedSensor::SysfsFile { path: Path::new("/proc/meminfo").to_path_buf(), device_path: device_path.clone(), divider });
-            }
             let hwmon_dir = Path::new("/sys/class/hwmon");
             let entries = std::fs::read_dir(hwmon_dir).ok()?;
 
             for entry in entries.flatten() {
                 let path = entry.path();
 
-                let device_path_symlink = std::fs::read_link(path.join("device"))
-                    .ok()
-                    .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()));
-                
-                let curr_device_path = if let Some(dev) = &device_path_symlink {
-                    if dev.starts_with("DEADBEEF") { // virtual devices like my motherboard links to "DEADBEEF-2001-0000-00A0-C90629100000"
-                        get_pci_id_from_path(path.clone())
-                    } else {
-                        dev.to_string()
+                // Match by device_path (PCI ID) when available, otherwise by hwmon name
+                if device_path.is_empty() {
+                    let hw_name = std::fs::read_to_string(path.join("name"))
+                        .ok()
+                        .map(|n| n.trim().to_string());
+                    if hw_name.as_deref() != Some(name) {
+                        continue;
                     }
                 } else {
-                    get_pci_id_from_path(path.clone())
-                };
+                    let device_path_symlink = std::fs::read_link(path.join("device"))
+                        .ok()
+                        .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()));
 
-                if curr_device_path != *device_path {
-                    continue;
+                    let curr_device_path = if let Some(dev) = &device_path_symlink {
+                        if dev.starts_with("DEADBEEF") {
+                            get_pci_id_from_path(path.clone())
+                        } else {
+                            dev.to_string()
+                        }
+                    } else {
+                        get_pci_id_from_path(path.clone())
+                    };
+
+                    if curr_device_path != *device_path {
+                        continue;
+                    }
                 }
 
-                // Search *_input files for matching label
                 if let Ok(files) = std::fs::read_dir(&path) {
                     for file in files.flatten() {
                         let fname = file.file_name().to_string_lossy().to_string();
                         if fname.ends_with("_input") {
                             let prefix = fname.strip_suffix("_input").unwrap();
+                            // Match by prefix (new format) or by label file content (old format)
                             if prefix == label {
-                                return Some(ResolvedSensor::SysfsFile { path: file.path(), device_path: device_path.clone(), divider });
+                                return Some(ResolvedSensor::SysfsFile { path: file.path(), divider });
+                            }
+                            let file_label = std::fs::read_to_string(path.join(format!("{prefix}_label")))
+                                .map(|l| l.trim().to_string())
+                                .unwrap_or_default();
+                            if file_label == *label {
+                                return Some(ResolvedSensor::SysfsFile { path: file.path(), divider });
                             }
                         }
                     }
@@ -590,30 +569,39 @@ pub fn resolve_sensor(source: &SensorSource, divider: usize) -> Option<ResolvedS
 
 pub fn read_sensor_value(resolved: &ResolvedSensor) -> anyhow::Result<f32> {
     match resolved {
-        ResolvedSensor::SysfsFile { path, device_path, divider } => {
-            if device_path == "direct:cpu_usage" {
-                let ret = SysSensor::get_cpu_usage();
-                return Ok((ret as f32) / (*divider as f32));
-            }
+        ResolvedSensor::SysfsFile { path, divider, .. } => {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
-
-            if device_path == "direct:mem_usage" {
-                return Ok(get_mem_usage(&content));
-            }
-            if device_path == "direct:mem_used" {
-                let total = extract_mem_value(&content, "MemTotal:").unwrap_or(0.0);
-                let avail = extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0);
-                return Ok((total - avail) / (*divider as f32));
-            }
-            if device_path == "direct:mem_free" {
-                return Ok(extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0) / (*divider as f32));
-            }
             let raw_value: f32 = content
                 .trim()
                 .parse()
                 .map_err(|e| anyhow::anyhow!("parsing {}: {e}", path.display()))?;
             Ok(raw_value / (*divider as f32))
+        }
+        ResolvedSensor::Virtual { source, divider } => {
+            match source {
+                SensorSource::CpuUsage => {
+                    Ok(SysSensor::get_cpu_usage() as f32 / *divider as f32)
+                }
+                SensorSource::MemUsage => {
+                    let content = std::fs::read_to_string("/proc/meminfo")
+                        .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
+                    Ok(get_mem_usage(&content))
+                }
+                SensorSource::MemUsed => {
+                    let content = std::fs::read_to_string("/proc/meminfo")
+                        .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
+                    let total = extract_mem_value(&content, "MemTotal:").unwrap_or(0.0);
+                    let avail = extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0);
+                    Ok((total - avail) / *divider as f32)
+                }
+                SensorSource::MemFree => {
+                    let content = std::fs::read_to_string("/proc/meminfo")
+                        .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
+                    Ok(extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0) / *divider as f32)
+                }
+                _ => anyhow::bail!("unexpected virtual sensor source"),
+            }
         }
         ResolvedSensor::NvidiaGpu(index) => {
             let output = Command::new("nvidia-smi")

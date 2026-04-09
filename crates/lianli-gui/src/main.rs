@@ -11,7 +11,6 @@ use lianli_shared::rgb::{
 use slint::{Model, ModelRc, VecModel};
 use std::sync::{Arc, Mutex};
 use lianli_shared::sensors::Unit;
-use lianli_shared::sensors::SensorSource;
 
 slint::include_modules!();
 
@@ -592,21 +591,20 @@ fn wire_fan_callbacks(
                 let source = if display.ends_with("Custom command") {
                     None
                 } else {
-                    let sensor_idx: usize = display.split('.').next().unwrap().parse().unwrap_or(0);
-                    state
-                        .available_sensors
-                        .iter()
-                        .filter(|s| s.unit == Unit::C)
-                        .nth(sensor_idx-1) // Fetches the x-th element (0-based)
-                        .map(|s| s.source.clone())
+                    let sensor_idx: usize = display.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    sensor_idx.checked_sub(1).and_then(|i| {
+                        state.available_sensors
+                            .iter()
+                            .filter(|s| s.unit == Unit::C)
+                            .nth(i)
+                            .map(|s| s.source.clone())
+                    })
                 };
                 if let Some(ref mut c) = state.config {
                     if let Some(curve) = c.fan_curves.get_mut(idx as usize) {
                         curve.temp_source = source;
-                        if curve.temp_source.is_none() {
-                            curve.temp_source = Some(SensorSource::Command {
-                                cmd: "".to_string(),
-                            },)
+                        if curve.temp_source.is_some() {
+                            curve.temp_command.clear();
                         }
                     }
                 }
@@ -855,9 +853,9 @@ fn wire_lcd_callbacks(
                 let devices = state.devices.clone();
                 let resolved_sensor_source: Option<lianli_shared::media::SensorSourceConfig> = {
                     let val_str = val.to_string();
-                    let sensor_idx: usize = val_str.split('.').next().unwrap().parse().unwrap_or(0);
-                    if field_str == "sensor_source" && !val_str.ends_with("Custom command") {
-                        if let Some(sensor) = state.available_sensors.get(sensor_idx-1) {
+                    let sensor_idx: usize = val_str.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    if field_str == "sensor_source" && !val_str.ends_with("Custom command") && sensor_idx > 0 {
+                        if let Some(sensor) = state.available_sensors.get(sensor_idx - 1) {
                             match &sensor.source {
                                 lianli_shared::sensors::SensorSource::Hwmon { name, label, device_path } =>
                                 {
@@ -872,6 +870,7 @@ fn wire_lcd_callbacks(
                                     Some(lianli_shared::media::SensorSourceConfig::Command { cmd: cmd.clone() }),
                                 lianli_shared::sensors::SensorSource::WirelessCoolant { device_id } =>
                                     Some(lianli_shared::media::SensorSourceConfig::WirelessCoolant { device_id: device_id.clone() }),
+                                _ => None,
                             }
                         } else {
                             None
