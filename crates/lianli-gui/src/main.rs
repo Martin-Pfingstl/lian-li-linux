@@ -1057,12 +1057,23 @@ fn wire_lcd_callbacks(
             let weak2 = weak.clone();
             let idx = idx as usize;
             std::thread::spawn(move || {
-                let file = rfd::FileDialog::new()
-                    .add_filter(
+                let is_sensor = {
+                    let state = shared2.lock().unwrap();
+                    state.config.as_ref()
+                        .and_then(|c| c.lcds.get(idx))
+                        .map(|lcd| lcd.media_type == lianli_shared::media::MediaType::Sensor)
+                        .unwrap_or(false)
+                };
+                let mut dialog = rfd::FileDialog::new();
+                dialog = if is_sensor {
+                    dialog.add_filter("Images", &["jpg", "jpeg", "png", "bmp"])
+                } else {
+                    dialog.add_filter(
                         "Media",
                         &["jpg", "jpeg", "png", "bmp", "gif", "mp4", "avi", "mkv", "webm"],
                     )
-                    .pick_file();
+                };
+                let file = dialog.pick_file();
                 if let Some(path) = file {
                     {
                         let mut state = shared2.lock().unwrap();
