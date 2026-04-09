@@ -110,8 +110,6 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
     
     let mut mem_idx: usize = 0;
     let mut gfx_idx: usize = 0;
-    let mut display_name: String;
-
     let gpu_names = get_amd_gpu_names();
 
     sensors.push(SensorInfo {
