@@ -77,9 +77,11 @@ pub struct DoublegaugeAsset {
     inner_arc_lut: Vec<GaugePixel>,
     font: Font<'static>,
 
-    // The whole frame will be rendered only if one of the following two values actually change.
-    previous_outer_gauge_value: Mutex<Option<String>>, // previously drawn value for other gauge (as string, but basically a numerical value)
-    previous_inner_gauge_value: Mutex<Option<String>>, // previously drawn value for inner gauge (as string, but basically a numerical value)
+    // Cached (formatted text, quantized 0..1000 arc range) per gauge. The
+    // angle term catches sub-display-precision movement (e.g. raw 50.4 -> 50.6
+    // with `decimals_* == 0`) that the text alone would mask.
+    previous_outer_state: Mutex<Option<(String, i32)>>,
+    previous_inner_state: Mutex<Option<(String, i32)>>,
 
     sensor_1_failed: AtomicBool,
     sensor_2_failed: AtomicBool,
@@ -344,8 +346,8 @@ impl DoublegaugeAsset {
             outer_arc_lut,
             inner_arc_lut,
             font,
-            previous_outer_gauge_value: Mutex::new(Option::None),
-            previous_inner_gauge_value: Mutex::new(Option::None),
+            previous_outer_state: Mutex::new(None),
+            previous_inner_state: Mutex::new(None),
             sensor_1_failed: AtomicBool::new(false),
             sensor_2_failed: AtomicBool::new(false),
             screen: *screen,
@@ -453,20 +455,42 @@ impl DoublegaugeAsset {
             prec = self.decimals_2,
             unit = self.unit_2
         );
-        {
-            let prev_outer = self.previous_outer_gauge_value.lock();
-            let prev_inner = self.previous_inner_gauge_value.lock();
+        let outer_range = map_unit_interval(
+            metric_outer_gauge_raw,
+            self.gauge_1_min as f32,
+            self.gauge_1_max as f32,
+        )
+        .clamp(0.0, 1.0);
+        let inner_range = map_unit_interval(
+            metric_inner_gauge_raw,
+            self.gauge_2_min as f32,
+            self.gauge_2_max as f32,
+        )
+        .clamp(0.0, 1.0);
 
-            if prev_outer.as_deref() == Some(metric_outer_gauge_text.as_str())
-                && prev_inner.as_deref() == Some(metric_inner_gauge_text.as_str())
-                && !force
-            {
+        let outer_angle_q = (outer_range * 1000.0).round() as i32;
+        let inner_angle_q = (inner_range * 1000.0).round() as i32;
+
+        {
+            let prev_outer = self.previous_outer_state.lock();
+            let prev_inner = self.previous_inner_state.lock();
+
+            let outer_match = prev_outer
+                .as_ref()
+                .is_some_and(|(t, q)| t == &metric_outer_gauge_text && *q == outer_angle_q);
+            let inner_match = prev_inner
+                .as_ref()
+                .is_some_and(|(t, q)| t == &metric_inner_gauge_text && *q == inner_angle_q);
+
+            if outer_match && inner_match && !force {
                 return Ok(None);
             }
         }
 
-        *self.previous_outer_gauge_value.lock() = Some(metric_outer_gauge_text.clone());
-        *self.previous_inner_gauge_value.lock() = Some(metric_inner_gauge_text.clone());
+        *self.previous_outer_state.lock() =
+            Some((metric_outer_gauge_text.clone(), outer_angle_q));
+        *self.previous_inner_state.lock() =
+            Some((metric_inner_gauge_text.clone(), inner_angle_q));
 
         // A pure in-memory-copy-operation (fast)
         let mut frame = self.template_image.clone();
@@ -519,23 +543,9 @@ impl DoublegaugeAsset {
         let angle_min = -58.0;
         let angle_max = 238.0;
 
-        // Map raw sensor reading into [0, 1] across the gauge's configured min/max,
-        // then linearly interpolate the arc sweep angle.
-        let outer_range = map_unit_interval(
-            metric_outer_gauge_raw,
-            self.gauge_1_min as f32,
-            self.gauge_1_max as f32,
-        )
-        .clamp(0.0, 1.0);
         let angle = angle_min + (angle_max - angle_min) * outer_range;
         self.apply_lut_mask(&mut frame, &self.full_arc_outer, &self.outer_arc_lut, angle);
 
-        let inner_range = map_unit_interval(
-            metric_inner_gauge_raw,
-            self.gauge_2_min as f32,
-            self.gauge_2_max as f32,
-        )
-        .clamp(0.0, 1.0);
         let angle = angle_min + (angle_max - angle_min) * inner_range;
         self.apply_lut_mask(&mut frame, &self.full_arc_inner, &self.inner_arc_lut, angle);
 
