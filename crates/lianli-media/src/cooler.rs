@@ -310,13 +310,16 @@ impl CoolerAsset {
         let sensor_left_value = self.read_value(&self.sensor_1).unwrap_or(0.0);
         let sensor_right_value = self.read_value(&self.sensor_2).unwrap_or(0.0);
 
-        let sensor_left_range = ((sensor_left_value - self.gauge_1_min as f32) 
-            / (self.gauge_1_max - self.gauge_1_min) as f32)
-            .clamp(0.0, 1.0);
-
-        let sensor_right_range = ((sensor_right_value - self.gauge_2_min as f32)
-            / (self.gauge_2_max - self.gauge_2_min) as f32)
-            .clamp(0.0, 1.0);
+        let sensor_left_range = normalize_range(
+            sensor_left_value,
+            self.gauge_1_min as f32,
+            self.gauge_1_max as f32,
+        );
+        let sensor_right_range = normalize_range(
+            sensor_right_value,
+            self.gauge_2_min as f32,
+            self.gauge_2_max as f32,
+        );
 
         if data.previous_sensor_left == (sensor_left_value as i32)
             && data.previous_sensor_right == (sensor_right_value.round() as i32)
@@ -540,6 +543,16 @@ impl CoolerAsset {
         lianli_shared::sensors::read_sensor_value(resolved_sensor)
             .map_err(|e| MediaError::Sensor(e.to_string()))
     }
+}
+
+/// Map `value` from the inclusive range [min, max] to [0, 1], clamping out-of-range
+/// inputs and returning 0 if the range is degenerate (min == max).
+fn normalize_range(value: f32, min: f32, max: f32) -> f32 {
+    let span = max - min;
+    if span.abs() < f32::EPSILON {
+        return 0.0;
+    }
+    ((value - min) / span).clamp(0.0, 1.0)
 }
 
 fn draw_gauge_needle(

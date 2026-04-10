@@ -385,9 +385,11 @@ impl DoublegaugeAsset {
         // And if clamp_1 is true, then clamp to display_value_1_min;display_value_1_max
 
         let mut metric_outer_gauge = self.display_value_1_min as f32
-            + ((metric_outer_gauge_raw - self.value_1_min as f32)
-                / (self.value_1_max - self.value_1_min) as f32)
-                * (self.display_value_1_max - self.display_value_1_min) as f32;
+            + map_unit_interval(
+                metric_outer_gauge_raw,
+                self.value_1_min as f32,
+                self.value_1_max as f32,
+            ) * (self.display_value_1_max - self.display_value_1_min) as f32;
         if self.clamp_1 {
             metric_outer_gauge = metric_outer_gauge.clamp(
                 self.display_value_1_min as f32,
@@ -405,9 +407,11 @@ impl DoublegaugeAsset {
         let metric_inner_gauge_raw = self.read_value(&self.sensor_2).unwrap_or(0.0);
 
         let mut metric_inner_gauge = self.display_value_2_min as f32
-            + ((metric_inner_gauge_raw - self.value_2_min as f32)
-                / (self.value_2_max - self.value_2_min) as f32)
-                * (self.display_value_2_max - self.display_value_2_min) as f32;
+            + map_unit_interval(
+                metric_inner_gauge_raw,
+                self.value_2_min as f32,
+                self.value_2_max as f32,
+            ) * (self.display_value_2_max - self.display_value_2_min) as f32;
         if self.clamp_2 {
             metric_inner_gauge = metric_inner_gauge.clamp(
                 self.display_value_2_min as f32,
@@ -487,17 +491,24 @@ impl DoublegaugeAsset {
         let angle_min = -58.0;
         let angle_max = 238.0;
 
-        // Temperature range is from 40 to 90 degree, so let's map temp variable to range from 0 to 100 for display
-        let range = ((metric_outer_gauge_raw - self.gauge_1_min as f32) * 100.0
-            / (self.gauge_1_max - self.gauge_1_min) as f32)
-            .clamp(0.0, 100.0);
-        let angle = angle_min + (angle_max - angle_min) * range / 100.0;
+        // Map raw sensor reading into [0, 1] across the gauge's configured min/max,
+        // then linearly interpolate the arc sweep angle.
+        let outer_range = map_unit_interval(
+            metric_outer_gauge_raw,
+            self.gauge_1_min as f32,
+            self.gauge_1_max as f32,
+        )
+        .clamp(0.0, 1.0);
+        let angle = angle_min + (angle_max - angle_min) * outer_range;
         self.apply_lut_mask(&mut frame, &self.full_arc_outer, &self.outer_arc_lut, angle);
 
-        let range = ((metric_inner_gauge_raw - self.gauge_2_min as f32) * 100.0
-            / (self.gauge_2_max - self.gauge_2_min) as f32)
-            .clamp(0.0, 100.0);
-        let angle = angle_min + (angle_max - angle_min) * range / 100.0;
+        let inner_range = map_unit_interval(
+            metric_inner_gauge_raw,
+            self.gauge_2_min as f32,
+            self.gauge_2_max as f32,
+        )
+        .clamp(0.0, 1.0);
+        let angle = angle_min + (angle_max - angle_min) * inner_range;
         self.apply_lut_mask(&mut frame, &self.full_arc_inner, &self.inner_arc_lut, angle);
 
         let resized: RgbImage = DynamicImage::ImageRgba8(frame).to_rgb8();
@@ -549,6 +560,17 @@ impl DoublegaugeAsset {
         lianli_shared::sensors::read_sensor_value(resolved_sensor)
             .map_err(|e| MediaError::Sensor(e.to_string()))
     }
+}
+
+/// Linearly map `value` from [min, max] to a unit interval (typically [0, 1] but
+/// may extend outside if the caller wants to extrapolate). Returns 0 if the
+/// range is degenerate (min == max) so we never divide by zero.
+fn map_unit_interval(value: f32, min: f32, max: f32) -> f32 {
+    let span = max - min;
+    if span.abs() < f32::EPSILON {
+        return 0.0;
+    }
+    (value - min) / span
 }
 
 fn draw_rotated_text_on_circle(
