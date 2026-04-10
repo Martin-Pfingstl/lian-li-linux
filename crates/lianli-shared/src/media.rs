@@ -242,9 +242,11 @@ pub struct DoublegaugeDescriptor {
     pub gauge_2_min: i32,
     #[serde(default = "default_100")]
     pub gauge_2_max: i32,
+    #[serde(default)]
     pub value_2_min: i32,
     #[serde(default = "default_100")]
     pub value_2_max: i32,
+    #[serde(default)]
     pub display_value_2_min: i32,
     #[serde(default = "default_100")]
     pub display_value_2_max: i32,
