@@ -496,11 +496,6 @@ impl DoublegaugeAsset {
             }
         }
 
-        *self.previous_outer_state.lock() =
-            Some((metric_outer_gauge_text.clone(), outer_angle_q));
-        *self.previous_inner_state.lock() =
-            Some((metric_inner_gauge_text.clone(), inner_angle_q));
-
         // A pure in-memory-copy-operation (fast)
         let mut frame = self.template_image.clone();
 
@@ -562,14 +557,18 @@ impl DoublegaugeAsset {
 
         let oriented = apply_orientation(resized, self.orientation);
 
-        let encoded_jpeg_result = encode_jpeg(oriented, &self.screen).map(Some);
-        let frame_result: Result<Option<FrameInfo>, MediaError> = encoded_jpeg_result.map(|opt| {
-            opt.map(|data| FrameInfo {
-                data,
-                frame_index: self.frame_index.fetch_add(1, Ordering::SeqCst),
-            })
-        });
-        return frame_result;
+        let jpeg = encode_jpeg(oriented, &self.screen)?;
+
+        // Only advance the dirty cache once we know the frame actually made it
+        // through the encoder; otherwise a transient encode failure would mark
+        // these values as already-rendered and skip retries.
+        *self.previous_outer_state.lock() = Some((metric_outer_gauge_text, outer_angle_q));
+        *self.previous_inner_state.lock() = Some((metric_inner_gauge_text, inner_angle_q));
+
+        Ok(Some(FrameInfo {
+            data: jpeg,
+            frame_index: self.frame_index.fetch_add(1, Ordering::SeqCst),
+        }))
     }
 
     pub fn blank_frame(&self) -> FrameInfo {
