@@ -163,7 +163,10 @@ impl CoolerAsset {
         );
 
         let sys_data = Mutex::new(CpuData::default());
-        let scale = Scale::uniform(26.0 * x_scale);
+        // Same basis used by render_frame so static template labels stay
+        // aligned with live readouts on non-square panels.
+        let uniform_scale = x_scale.min(y_scale);
+        let scale = Scale::uniform(26.0 * uniform_scale);
 
         // Now draw the labels
         let (tw, _, _, _, _) = get_exact_text_metrics(&font_label, label1, scale);
@@ -219,9 +222,9 @@ impl CoolerAsset {
             num_cores = 1;
         }
 
-        // We have 228px*x_scale space
-        let space = (228.0 * x_scale).round() as i32;
-        let size_per_core = space / num_cores;
+        // 228px wide chart at the 480x480 base.
+        let space = ((228.0 * x_scale).round() as i32).max(1);
+        let size_per_core = (space / num_cores).max(1);
 
         let remaining_pixel = space - size_per_core * (num_cores as i32);
 
@@ -273,7 +276,7 @@ impl CoolerAsset {
                 rgb_lightgrey,
                 x + 2,
                 y - 8 as i32,
-                Scale::uniform(9.0),
+                Scale::uniform(9.0 * uniform_scale),
                 &font_digital7,
                 &s,
             );

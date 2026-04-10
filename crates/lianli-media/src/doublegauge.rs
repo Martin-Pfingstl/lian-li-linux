@@ -115,13 +115,16 @@ impl DoublegaugeAsset {
 
         let x_scale = (screen.width as f32) / 400.0;
         let y_scale = (screen.height as f32) / 400.0;
+        // Same basis used by render_frame so static template labels stay
+        // aligned with live readouts on non-square panels.
+        let uniform_scale = x_scale.min(y_scale);
 
         let mut template_image = dynamic_img.into_rgb8();
 
         let font = Font::try_from_bytes(FONT_DATA as &[u8]).expect("Error while loading font");
 
         let rgb_lightgrey = ::image::Rgb([230, 238, 246]);
-        let scale = Scale::uniform(34.0 * x_scale);
+        let scale = Scale::uniform(34.0 * uniform_scale);
 
         let text = &descriptor.label_1;
         let (tw, _, ox, _, _) = get_exact_text_metrics(&font, text, scale);
@@ -192,7 +195,7 @@ impl DoublegaugeAsset {
             ((screen.width / 2) as f32, (screen.height / 2) as f32),
             (screen.height / 2 - 40) as f32,
             260.0,
-            (50.0 * x_scale) as u32,
+            (50.0 * uniform_scale) as u32,
             Rgba([0, 0, 0, 255]),
         );
 
