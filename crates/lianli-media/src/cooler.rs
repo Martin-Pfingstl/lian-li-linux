@@ -40,10 +40,14 @@ use std::time::Duration;
 use tracing::warn;
 
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CpuData {
-    pub previous_sensor_left: i32,
-    pub previous_sensor_right: i32,
+    pub previous_left_text: Option<String>,
+    pub previous_right_text: Option<String>,
+    // Quantized 0..1000 so the dirty check still fires when the needle/bar
+    // moves below the precision of the formatted text.
+    pub previous_left_angle_q: i32,
+    pub previous_right_angle_q: i32,
     pub previous_usage_per_core: Vec<u32>,
 }
 
@@ -158,11 +162,7 @@ impl CoolerAsset {
             (184.0 * y_scale).round() as i64,
         );
 
-        let sys_data = Mutex::new(CpuData {
-            previous_sensor_left: -1,
-            previous_sensor_right: -1,
-            previous_usage_per_core: vec![],
-        });
+        let sys_data = Mutex::new(CpuData::default());
         let scale = Scale::uniform(26.0 * x_scale);
 
         // Now draw the labels
@@ -355,19 +355,53 @@ impl CoolerAsset {
             self.gauge_2_max as f32,
         );
 
-        let sensor_left_rounded = sensor_left_value.round() as i32;
-        let sensor_right_rounded = sensor_right_value.round() as i32;
+        let display_left = map_display_value(
+            sensor_left_value,
+            self.value_1_min,
+            self.value_1_max,
+            self.display_value_1_min,
+            self.display_value_1_max,
+            self.clamp_1,
+        );
+        let display_right = map_display_value(
+            sensor_right_value,
+            self.value_2_min,
+            self.value_2_max,
+            self.display_value_2_min,
+            self.display_value_2_max,
+            self.clamp_2,
+        );
 
-        if data.previous_sensor_left == sensor_left_rounded
-            && data.previous_sensor_right == sensor_right_rounded
+        let left_text = format!(
+            "{value:.prec$}{unit}",
+            value = display_left,
+            prec = self.decimals_1,
+            unit = self.unit1,
+        );
+        let right_text = format!(
+            "{value:.prec$}{unit}",
+            value = display_right,
+            prec = self.decimals_2,
+            unit = self.unit2,
+        );
+
+        let left_angle_q = (sensor_left_range * 1000.0).round() as i32;
+        let right_angle_q = (sensor_right_range * 1000.0).round() as i32;
+
+        if data.previous_left_text.as_deref() == Some(left_text.as_str())
+            && data.previous_right_text.as_deref() == Some(right_text.as_str())
+            && data.previous_left_angle_q == left_angle_q
+            && data.previous_right_angle_q == right_angle_q
             && data.previous_usage_per_core == usage_per_core_pct
             && !force
         {
             return Ok(None);
         }
 
-        data.previous_sensor_left = sensor_left_rounded;
-        data.previous_sensor_right = sensor_right_rounded;
+        data.previous_left_text = Some(left_text.clone());
+        data.previous_right_text = Some(right_text.clone());
+        data.previous_left_angle_q = left_angle_q;
+        data.previous_right_angle_q = right_angle_q;
         data.previous_usage_per_core = usage_per_core_pct;
 
         let mut frame = self.template_image.clone();
@@ -382,40 +416,24 @@ impl CoolerAsset {
         let x_scale = (self.screen.width as f32) / 480.0;
         let y_scale = (self.screen.height as f32) / 480.0;
 
-        let mut box_x = (180.0 * x_scale).round() as i32;
+        let left_anchor_x = (220.0 * x_scale).round() as i32;
         let box_y = (277.0 * y_scale).round() as i32;
 
         let scale = Scale::uniform(39.0);
 
-        let (_, _, _, _, ascent) = get_exact_text_metrics(&font_label, &self.unit1, scale);
+        let (tw, _, _, _, ascent) = get_exact_text_metrics(&font_label, &left_text, scale);
 
         draw_text_mut(
             &mut frame,
             color,
-            box_x,
+            left_anchor_x - tw,
             box_y - ascent as i32,
             scale,
             &font_label,
-            &self.unit1,
+            &left_text,
         );
 
-        let s = data.previous_sensor_left.to_string();
-
-        let (tw, _, _, _, _) = get_exact_text_metrics(&font_label, &s, scale);
-
-        draw_text_mut(
-            &mut frame,
-            color,
-            box_x - tw - 10,
-            box_y - ascent as i32,
-            scale,
-            &font_label,
-            &s,
-        );
-
-        // Render temperature in degree and unit
-
-        box_x = (334.0 * x_scale).round() as i32;
+        let right_anchor_x = (374.0 * x_scale).round() as i32;
 
         // Calculate color  (90° -> 0°)
 
@@ -423,30 +441,16 @@ impl CoolerAsset {
         let rgb = hsl_to_rgb(hue, 1.0, 0.5);
         let color = Rgba([rgb[0], rgb[1], rgb[2], 255]);
 
-        let (_, _, _, _, ascent) = get_exact_text_metrics(&font_label, &self.unit2, scale);
+        let (tw, _, _, _, ascent) = get_exact_text_metrics(&font_label, &right_text, scale);
 
         draw_text_mut(
             &mut frame,
             color,
-            box_x,
+            right_anchor_x - tw,
             box_y - ascent as i32,
             scale,
             &font_label,
-            &self.unit2,
-        );
-
-        let s = data.previous_sensor_right.to_string();
-
-        let (tw, _, _, _, _) = get_exact_text_metrics(&font_label, &s, scale);
-
-        draw_text_mut(
-            &mut frame,
-            color,
-            box_x - tw - 6,
-            box_y - ascent as i32,
-            scale,
-            &font_label,
-            &s,
+            &right_text,
         );
 
         // Now draw the inner part of the thermometer
@@ -475,13 +479,11 @@ impl CoolerAsset {
             );
         }
 
-        let cpu_load = data.previous_sensor_left as f32;
-
         let center_x = (168.0 * x_scale).round() as i32;
         let center_y = (206.0 * y_scale).round() as i32;
 
-        // Calculate anglie: 0% = 180°, 100% = 360°
-        let needle_angle = 180.0 + (cpu_load * 1.8);
+        // Dial covers 180deg -> 360deg
+        let needle_angle = 180.0 + sensor_left_range * 180.0;
 
         // Needle should be slightly longer than inner radius
         let needle_start_length = 6.0;
@@ -586,6 +588,30 @@ fn normalize_range(value: f32, min: f32, max: f32) -> f32 {
         return 0.0;
     }
     ((value - min) / span).clamp(0.0, 1.0)
+}
+
+fn map_display_value(
+    raw: f32,
+    value_min: i32,
+    value_max: i32,
+    display_min: i32,
+    display_max: i32,
+    clamp: bool,
+) -> f32 {
+    let span = (value_max - value_min) as f32;
+    let display_span = (display_max - display_min) as f32;
+    let mapped = if span.abs() < f32::EPSILON {
+        display_min as f32
+    } else {
+        display_min as f32 + ((raw - value_min as f32) / span) * display_span
+    };
+    if clamp {
+        let lo = (display_min as f32).min(display_max as f32);
+        let hi = (display_min as f32).max(display_max as f32);
+        mapped.clamp(lo, hi)
+    } else {
+        mapped
+    }
 }
 
 /// Read a sensor and fall back to 0 on error. Logs the failure once per failure
