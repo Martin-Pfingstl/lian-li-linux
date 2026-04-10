@@ -1,10 +1,6 @@
 //! `CustomAsset` — the data-driven renderer for `MediaType::Custom`.
 
-use crate::common::{
-    apply_orientation, encode_jpeg, get_exact_text_metrics, MediaError,
-    FONT_DATA as VICTOR_MONO_DATA, FONT_DATA_DIGITAL_7 as DIGITAL7_DATA,
-    FONT_DATA_LABEL as JETBRAINS_MONO_DATA,
-};
+use crate::common::{apply_orientation, encode_jpeg, get_exact_text_metrics, MediaError};
 use crate::sensor::FrameInfo;
 use crate::video::decode_frames_to_rgba;
 use image::imageops::FilterType;
@@ -16,17 +12,20 @@ use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use imageproc::pixelops::interpolate;
 use imageproc::point::Point;
 use imageproc::rect::Rect;
+use lianli_shared::fonts::default_font_path;
 use lianli_shared::media::{SensorRange, SensorSourceConfig};
 use lianli_shared::screen::ScreenInfo;
 use lianli_shared::sensors::{read_sensor_value, resolve_sensor, ResolvedSensor, SensorInfo};
 use lianli_shared::systeminfo::SysSensor;
 use lianli_shared::template::{
-    BarOrientation, BuiltinAsset, BuiltinFont, FontRef, ImageFit, LcdTemplate, TemplateBackground,
-    TextAlign, Widget, WidgetKind,
+    BarOrientation, BuiltinAsset, FontRef, ImageFit, LcdTemplate, TemplateBackground, TextAlign,
+    Widget, WidgetKind,
 };
 use parking_lot::Mutex;
 use rusttype::{Font, Scale};
+use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -68,9 +67,8 @@ pub struct CustomAsset {
     offset_y: i32,
     canonical_width: u32,
     canonical_height: u32,
-    font_victor: Font<'static>,
-    font_jetbrains: Font<'static>,
-    font_digital7: Font<'static>,
+    fonts: HashMap<PathBuf, Font<'static>>,
+    default_font: Font<'static>,
     frame_index: AtomicUsize,
     start_instant: Instant,
 }
@@ -93,13 +91,32 @@ impl CustomAsset {
         screen: &ScreenInfo,
         all_sensors: &[SensorInfo],
     ) -> Result<Arc<Self>, MediaError> {
-        let font_victor = Font::try_from_bytes(VICTOR_MONO_DATA)
-            .ok_or_else(|| MediaError::Sensor("bundled Victor Mono font failed to load".into()))?;
-        let font_jetbrains = Font::try_from_bytes(JETBRAINS_MONO_DATA).ok_or_else(|| {
-            MediaError::Sensor("bundled JetBrains Mono font failed to load".into())
+        let default_path = default_font_path().ok_or_else(|| {
+            MediaError::Sensor(
+                "no system font available; install fontconfig or DejaVu Sans".into(),
+            )
         })?;
-        let font_digital7 = Font::try_from_bytes(DIGITAL7_DATA)
-            .ok_or_else(|| MediaError::Sensor("bundled Digital-7 font failed to load".into()))?;
+        let default_font = load_font_from_disk(&default_path)?;
+        let mut fonts: HashMap<PathBuf, Font<'static>> = HashMap::new();
+        for w in &template.widgets {
+            if let Some(fr) = widget_font_ref(&w.kind) {
+                if let Some(p) = &fr.path {
+                    if !fonts.contains_key(p) {
+                        match load_font_from_disk(p) {
+                            Ok(f) => {
+                                fonts.insert(p.clone(), f);
+                            }
+                            Err(e) => warn!(
+                                "template '{}' widget '{}' font '{}' failed: {e}",
+                                template.id,
+                                w.id,
+                                p.display()
+                            ),
+                        }
+                    }
+                }
+            }
+        }
 
         let uniform_scale = (screen.width as f32 / template.base_width as f32)
             .min(screen.height as f32 / template.base_height as f32)
@@ -241,9 +258,8 @@ impl CustomAsset {
                     uniform_scale,
                     offset_x,
                     offset_y,
-                    &font_victor,
-                    &font_jetbrains,
-                    &font_digital7,
+                    &fonts,
+                    &default_font,
                     ElapsedMs(0),
                 );
             }
@@ -261,9 +277,8 @@ impl CustomAsset {
             offset_y,
             canonical_width: screen.width,
             canonical_height: screen.height,
-            font_victor,
-            font_jetbrains,
-            font_digital7,
+            fonts,
+            default_font,
             frame_index: AtomicUsize::new(1),
             start_instant: Instant::now(),
         }))
@@ -350,9 +365,8 @@ impl CustomAsset {
                 self.uniform_scale,
                 self.offset_x,
                 self.offset_y,
-                &self.font_victor,
-                &self.font_jetbrains,
-                &self.font_digital7,
+                &self.fonts,
+                &self.default_font,
                 ElapsedMs(elapsed_ms),
             );
         }
@@ -486,20 +500,31 @@ fn fit_image(src: DynamicImage, target_w: u32, target_h: u32, fit: ImageFit) -> 
     }
 }
 
+fn load_font_from_disk(path: &std::path::Path) -> Result<Font<'static>, MediaError> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| MediaError::Sensor(format!("font '{}' read failed: {e}", path.display())))?;
+    Font::try_from_vec(bytes)
+        .ok_or_else(|| MediaError::Sensor(format!("font '{}' parse failed", path.display())))
+}
+
+fn widget_font_ref(kind: &WidgetKind) -> Option<&FontRef> {
+    match kind {
+        WidgetKind::Label { font, .. } | WidgetKind::ValueText { font, .. } => Some(font),
+        _ => None,
+    }
+}
+
 fn resolve_font<'a>(
     font_ref: &FontRef,
-    victor: &'a Font<'static>,
-    jetbrains: &'a Font<'static>,
-    digital7: &'a Font<'static>,
+    fonts: &'a HashMap<PathBuf, Font<'static>>,
+    default: &'a Font<'static>,
 ) -> &'a Font<'static> {
-    match font_ref {
-        FontRef::Builtin { font } => match font {
-            BuiltinFont::VictorMono => victor,
-            BuiltinFont::JetBrainsMono => jetbrains,
-            BuiltinFont::Digital7 => digital7,
-        },
-        FontRef::File { .. } => victor,
+    if let Some(p) = &font_ref.path {
+        if let Some(f) = fonts.get(p) {
+            return f;
+        }
     }
+    default
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -510,9 +535,8 @@ fn draw_widget(
     uniform_scale: f32,
     offset_x: i32,
     offset_y: i32,
-    victor: &Font<'static>,
-    jetbrains: &Font<'static>,
-    digital7: &Font<'static>,
+    fonts: &HashMap<PathBuf, Font<'static>>,
+    default_font: &Font<'static>,
     elapsed_ms: ElapsedMs,
 ) {
     let (ww, wh) = widget_size_px(widget, uniform_scale);
@@ -530,7 +554,7 @@ fn draw_widget(
             color,
             align,
         } => {
-            let f = resolve_font(font, victor, jetbrains, digital7);
+            let f = resolve_font(font, fonts, default_font);
             draw_text_widget(
                 &mut sub,
                 text,
@@ -552,7 +576,7 @@ fn draw_widget(
             ranges,
             ..
         } => {
-            let f = resolve_font(font, victor, jetbrains, digital7);
+            let f = resolve_font(font, fonts, default_font);
             let text = state.last_render_text.clone().unwrap_or_default();
             if !text.is_empty() {
                 let resolved_color = if ranges.is_empty() {
@@ -695,7 +719,7 @@ fn draw_widget(
                 *show_labels,
                 ranges,
                 uniform_scale,
-                digital7,
+                default_font,
             );
         }
         WidgetKind::Image { opacity, .. } => {
@@ -797,7 +821,7 @@ fn unit_interval(value: f32, min: f32, max: f32) -> f32 {
 fn decode_builtin_asset_native(asset: BuiltinAsset) -> Option<RgbaImage> {
     let bytes: &[u8] = match asset {
         BuiltinAsset::CoolerBackground => include_bytes!("../assets/cooler.png"),
-        BuiltinAsset::DoublegaugeBackground => include_bytes!("../assets/gauge.jpg"),
+        BuiltinAsset::DoublegaugeBackground => include_bytes!("../assets/gauge.png"),
         BuiltinAsset::Thermometer => include_bytes!("../assets/thermometer.png"),
     };
     ::image::load_from_memory(bytes)

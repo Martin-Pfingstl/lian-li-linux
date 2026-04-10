@@ -285,27 +285,10 @@ pub enum ImageFit {
     Cover,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum FontRef {
-    Builtin { font: BuiltinFont },
-    File { path: PathBuf },
-}
-
-impl Default for FontRef {
-    fn default() -> Self {
-        Self::Builtin {
-            font: BuiltinFont::VictorMono,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BuiltinFont {
-    VictorMono,
-    JetBrainsMono,
-    Digital7,
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FontRef {
+    #[serde(default)]
+    pub path: Option<PathBuf>,
 }
 
 impl WidgetKind {

@@ -16,10 +16,7 @@ use lianli_devices::traits::FanDevice;
 use lianli_devices::winusb_lcd::WinUsbLcdDevice;
 use lianli_devices::wireless::WirelessController;
 use lianli_media::sensor::FrameInfo;
-use lianli_media::{
-    prepare_media_asset, CoolerAsset, CustomAsset, DoublegaugeAsset, MediaAsset, MediaAssetKind,
-    SensorAsset,
-};
+use lianli_media::{prepare_media_asset, CustomAsset, MediaAsset, MediaAssetKind, SensorAsset};
 use lianli_shared::config::HidDriver;
 use lianli_shared::config::{config_identity, AppConfig, ConfigKey, LcdConfig};
 use lianli_shared::sensors::SensorInfo;
@@ -967,10 +964,6 @@ impl ServiceManager {
                             MediaType::Image => info!("Prepared image for LCD[{device_id}]"),
                             MediaType::Video => info!("Prepared video for LCD[{device_id}]"),
                             MediaType::Gif => info!("Prepared GIF for LCD[{device_id}]"),
-                            MediaType::Doublegauge => {
-                                info!("Prepared Doublegauge for LCD[{device_id}]")
-                            }
-                            MediaType::Cooler => info!("Prepared Cooler for LCD[{device_id}]"),
                             MediaType::Color => info!("Prepared color frame for LCD[{device_id}]"),
                             MediaType::Sensor => info!(
                                 "Prepared sensor for LCD[{device_id}]: {}",
@@ -984,6 +977,7 @@ impl ServiceManager {
                                 "Prepared custom template for LCD[{device_id}]: {}",
                                 device.template_id.as_deref().unwrap_or("<none>")
                             ),
+                            MediaType::Doublegauge | MediaType::Cooler => {}
                         }
                         tx.send(DaemonEvent::FrameFinished { asset: asset_arc })
                             .ok();
@@ -1574,16 +1568,6 @@ enum MediaRuntime {
         looping: bool,
         started: bool,
     },
-    Doublegauge {
-        renderer: Arc<AsyncDoublegaugeRenderer>,
-        cached_frame: Vec<u8>,
-        sent_frame_index: usize,
-    },
-    Cooler {
-        renderer: Arc<AsyncCoolerRenderer>,
-        cached_frame: Vec<u8>,
-        sent_frame_index: usize,
-    },
     Custom {
         renderer: Arc<AsyncCustomRenderer>,
         cached_frame: Vec<u8>,
@@ -1744,167 +1728,6 @@ impl Drop for AsyncVideoPlayer {
     }
 }
 
-struct AsyncDoublegaugeRenderer {
-    current_frame: Arc<Mutex<FrameInfo>>,
-    stop_flag: Arc<AtomicBool>,
-    _thread: Option<JoinHandle<()>>,
-}
-
-impl AsyncDoublegaugeRenderer {
-    fn new(
-        tx: Option<Sender<DaemonEvent>>,
-        asset: Arc<DoublegaugeAsset>,
-        baseasset: Arc<MediaAsset>,
-    ) -> Self {
-        let initial = match asset.render_frame(true) {
-            Ok(Some(frame)) => frame,
-            Ok(None) => asset.blank_frame(),
-            Err(err) => {
-                warn!("Doublegauge initial render failed: {err}");
-                asset.blank_frame()
-            }
-        };
-
-        let current_frame = Arc::new(Mutex::new(initial));
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let update_interval = asset.update_interval();
-
-        let asset_clone: Arc<DoublegaugeAsset> = Arc::clone(&asset);
-
-        let frame_clone = Arc::clone(&current_frame);
-        let stop_clone = Arc::clone(&stop_flag);
-
-        let asset_for_thread = Arc::clone(&baseasset);
-        let tx_for_thread = tx.clone();
-
-        let thread = thread::spawn(move || {
-            while !stop_clone.load(Ordering::Relaxed) {
-                thread::sleep(update_interval);
-                if stop_clone.load(Ordering::Relaxed) {
-                    break;
-                }
-                match asset_clone.render_frame(false) {
-                    Ok(Some(new_frame)) => {
-                        *frame_clone.lock() = new_frame;
-                        if let Some(ref tx) = tx_for_thread {
-                            let event = DaemonEvent::FrameFinished {
-                                asset: Arc::clone(&asset_for_thread),
-                            };
-                            if tx.send(event).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(err) => {
-                        warn!("Doublegauge background render failed: {err}");
-                    }
-                }
-            }
-        });
-
-        Self {
-            current_frame,
-            stop_flag,
-            _thread: Some(thread),
-        }
-    }
-
-    fn get_frame_index(&self) -> usize {
-        self.current_frame.lock().frame_index
-    }
-
-    fn get_current_frame(&self) -> Vec<u8> {
-        self.current_frame.lock().data.clone()
-    }
-}
-
-impl Drop for AsyncDoublegaugeRenderer {
-    fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
-    }
-}
-
-struct AsyncCoolerRenderer {
-    current_frame: Arc<Mutex<FrameInfo>>,
-    stop_flag: Arc<AtomicBool>,
-    _thread: Option<JoinHandle<()>>,
-}
-
-impl AsyncCoolerRenderer {
-    fn new(
-        tx: Option<Sender<DaemonEvent>>,
-        asset: Arc<CoolerAsset>,
-        baseasset: Arc<MediaAsset>,
-    ) -> Self {
-        let initial = match asset.render_frame(true) {
-            Ok(Some(frame)) => frame,
-            Ok(None) => asset.blank_frame(),
-            Err(err) => {
-                warn!("Cooler initial render failed: {err}");
-                asset.blank_frame()
-            }
-        };
-
-        let current_frame = Arc::new(Mutex::new(initial));
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let update_interval = asset.update_interval();
-
-        let asset_clone = Arc::clone(&asset);
-        let frame_clone = Arc::clone(&current_frame);
-        let stop_clone = Arc::clone(&stop_flag);
-
-        let asset_for_thread = Arc::clone(&baseasset);
-        let tx_for_thread = tx.clone();
-
-        let thread = thread::spawn(move || {
-            while !stop_clone.load(Ordering::Relaxed) {
-                thread::sleep(update_interval);
-                if stop_clone.load(Ordering::Relaxed) {
-                    break;
-                }
-                match asset_clone.render_frame(false) {
-                    Ok(Some(new_frame)) => {
-                        *frame_clone.lock() = new_frame;
-                        if let Some(ref tx) = tx_for_thread {
-                            let event = DaemonEvent::FrameFinished {
-                                asset: Arc::clone(&asset_for_thread),
-                            };
-                            if tx.send(event).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(err) => {
-                        warn!("Cooler background render failed: {err}");
-                    }
-                }
-            }
-        });
-
-        Self {
-            current_frame,
-            stop_flag,
-            _thread: Some(thread),
-        }
-    }
-
-    fn get_frame_index(&self) -> usize {
-        self.current_frame.lock().frame_index
-    }
-
-    fn get_current_frame(&self) -> Vec<u8> {
-        self.current_frame.lock().data.clone()
-    }
-}
-
-impl Drop for AsyncCoolerRenderer {
-    fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
-    }
-}
-
 struct AsyncCustomRenderer {
     current_frame: Arc<Mutex<FrameInfo>>,
     stop_flag: Arc<AtomicBool>,
@@ -2029,38 +1852,6 @@ impl MediaRuntime {
                 looping: *looping,
                 started: false,
             },
-            MediaAssetKind::Doublegauge {
-                asset: doublegauge_asset,
-            } => {
-                let renderer = Arc::new(AsyncDoublegaugeRenderer::new(
-                    tx,
-                    Arc::clone(doublegauge_asset),
-                    Arc::clone(&asset),
-                ));
-
-                let cached_frame = renderer.get_current_frame();
-                Self::Doublegauge {
-                    renderer,
-                    cached_frame,
-                    sent_frame_index: 0,
-                }
-            }
-            MediaAssetKind::Cooler {
-                asset: cooler_asset,
-            } => {
-                let renderer = Arc::new(AsyncCoolerRenderer::new(
-                    tx,
-                    Arc::clone(cooler_asset),
-                    Arc::clone(&asset),
-                ));
-
-                let cached_frame = renderer.get_current_frame();
-                Self::Cooler {
-                    renderer,
-                    cached_frame,
-                    sent_frame_index: 0,
-                }
-            }
             MediaAssetKind::Custom {
                 asset: custom_asset,
             } => {
@@ -2098,34 +1889,6 @@ impl MediaRuntime {
                 ret
             }
             MediaRuntime::Sensor {
-                renderer,
-                cached_frame,
-                sent_frame_index,
-                ..
-            } => {
-                let rendered_frame_index = renderer.get_frame_index();
-                if rendered_frame_index <= *sent_frame_index {
-                    return None;
-                }
-                *cached_frame = renderer.get_current_frame();
-                *sent_frame_index = rendered_frame_index;
-                Some(cached_frame.as_slice())
-            }
-            MediaRuntime::Doublegauge {
-                renderer,
-                cached_frame,
-                sent_frame_index,
-                ..
-            } => {
-                let rendered_frame_index = renderer.get_frame_index();
-                if rendered_frame_index <= *sent_frame_index {
-                    return None;
-                }
-                *cached_frame = renderer.get_current_frame();
-                *sent_frame_index = rendered_frame_index;
-                Some(cached_frame.as_slice())
-            }
-            MediaRuntime::Cooler {
                 renderer,
                 cached_frame,
                 sent_frame_index,

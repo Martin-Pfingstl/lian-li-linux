@@ -26,10 +26,6 @@ pub enum MediaError {
     ImageError(String),
 }
 
-pub const FONT_DATA_LABEL: &[u8] = include_bytes!("../assets/JetBrainsMono-Bold.ttf");
-pub const FONT_DATA: &[u8] = include_bytes!("../assets/VictorMono-Bold.ttf");
-pub const FONT_DATA_DIGITAL_7: &[u8] = include_bytes!("../assets/digital-7.ttf");
-
 pub fn encode_jpeg(image: RgbImage, screen: &ScreenInfo) -> Result<Vec<u8>, MediaError> {
     let final_image = apply_device_rotation(image, screen.device_rotation);
     let mut buf = Vec::new();

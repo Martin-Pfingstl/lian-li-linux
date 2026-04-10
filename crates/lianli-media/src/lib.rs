@@ -1,20 +1,16 @@
 pub mod common;
-pub mod cooler;
 pub mod custom;
-pub mod doublegauge;
 pub mod image;
 pub mod sensor;
 pub mod video;
 
 pub use common::MediaError;
-pub use cooler::CoolerAsset;
 pub use custom::CustomAsset;
-pub use doublegauge::DoublegaugeAsset;
 use lianli_shared::sensors::SensorInfo;
 pub use sensor::SensorAsset;
 
 use lianli_shared::config::{ConfigKey, LcdConfig};
-use lianli_shared::media::{MediaType, SensorSourceConfig};
+use lianli_shared::media::MediaType;
 use lianli_shared::screen::ScreenInfo;
 use lianli_shared::template::LcdTemplate;
 use lianli_shared::template_defaults::builtin_template_resolved;
@@ -45,12 +41,6 @@ pub enum MediaAssetKind {
         path: PathBuf,
         looping: bool,
         _temp: Arc<TempDir>,
-    },
-    Doublegauge {
-        asset: Arc<DoublegaugeAsset>,
-    },
-    Cooler {
-        asset: Arc<CoolerAsset>,
     },
     Custom {
         asset: Arc<CustomAsset>,
@@ -145,42 +135,10 @@ pub fn prepare_media_asset(
             )?;
             Ok(MediaAssetKind::Sensor { asset })
         }
-        MediaType::Doublegauge => {
-            let descriptor = cfg.doublegauge.as_ref().ok_or_else(|| {
-                MediaError::InvalidConfig(
-                    "doublegauge entry requires a 'doublegauge' section".into(),
-                )
-            })?;
-            let source_1 = resolve_sensor_config(&cfg.sensor_source_1, all_sensors)?;
-            let source_2 = resolve_sensor_config(&cfg.sensor_source_2, all_sensors)?;
-            let update_interval_ms = cfg.update_interval_ms.unwrap_or(1000);
-            let asset = DoublegaugeAsset::new(
-                descriptor,
-                cfg.orientation,
-                screen,
-                source_1,
-                source_2,
-                update_interval_ms,
-            )?;
-            Ok(MediaAssetKind::Doublegauge { asset })
-        }
-        MediaType::Cooler => {
-            let descriptor = cfg.doublegauge.as_ref().ok_or_else(|| {
-                MediaError::InvalidConfig("cooler entry requires a 'doublegauge' section".into())
-            })?;
-            let source_1 = resolve_sensor_config(&cfg.sensor_source_1, all_sensors)?;
-            let source_2 = resolve_sensor_config(&cfg.sensor_source_2, all_sensors)?;
-            let update_interval_ms = cfg.update_interval_ms.unwrap_or(1000);
-            let asset = CoolerAsset::new(
-                descriptor,
-                cfg.orientation,
-                screen,
-                source_1,
-                source_2,
-                update_interval_ms,
-            )?;
-            Ok(MediaAssetKind::Cooler { asset })
-        }
+        MediaType::Doublegauge | MediaType::Cooler => Err(MediaError::InvalidConfig(
+            "Doublegauge/Cooler are retired; this LCD should have been migrated to Custom on load"
+                .into(),
+        )),
         MediaType::Custom => {
             let template_id = cfg.template_id.as_deref().ok_or_else(|| {
                 MediaError::InvalidConfig("custom entry requires a 'template_id' field".into())
@@ -196,21 +154,3 @@ pub fn prepare_media_asset(
     }
 }
 
-fn resolve_sensor_config(
-    cfg_source: &SensorSourceConfig,
-    all_sensors: &[SensorInfo],
-) -> Result<lianli_shared::sensors::ResolvedSensor, MediaError> {
-    match cfg_source {
-        SensorSourceConfig::Constant { value } => {
-            Ok(lianli_shared::sensors::ResolvedSensor::Constant(*value))
-        }
-        _ => {
-            let sensor_source = cfg_source.to_sensor_source();
-            let sensor_info = all_sensors.iter().find(|s| s.source == sensor_source);
-            let divider = sensor_info.map_or(1, |s| s.divider);
-
-            lianli_shared::sensors::resolve_sensor(&sensor_source, divider)
-                .ok_or_else(|| MediaError::Sensor("sensor not found on system".into()))
-        }
-    }
-}

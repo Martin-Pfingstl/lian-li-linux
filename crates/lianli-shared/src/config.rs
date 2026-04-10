@@ -82,15 +82,7 @@ impl LcdConfig {
                 })?;
                 descriptor.validate()?;
             }
-            MediaType::Doublegauge | MediaType::Cooler => {
-                let descriptor = self.doublegauge.as_ref().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "LCD[{device_id}] {:?} configuration missing 'doublegauge' section",
-                        self.media_type
-                    )
-                })?;
-                descriptor.validate()?;
-            }
+            MediaType::Doublegauge | MediaType::Cooler => {}
             MediaType::Custom => {
                 if self
                     .template_id
@@ -193,6 +185,22 @@ impl AppConfig {
 
             if !seen.insert(identifier.clone()) {
                 warnings.push(format!("Duplicate LCD entry '{identifier}'"));
+            }
+
+            match device.media_type {
+                MediaType::Doublegauge => {
+                    device.media_type = MediaType::Custom;
+                    device.template_id =
+                        Some(crate::template_defaults::BUILTIN_DOUBLEGAUGE_ID.to_string());
+                    device.doublegauge = None;
+                }
+                MediaType::Cooler => {
+                    device.media_type = MediaType::Custom;
+                    device.template_id =
+                        Some(crate::template_defaults::BUILTIN_COOLER_ID.to_string());
+                    device.doublegauge = None;
+                }
+                _ => {}
             }
 
             if let Some(existing) = &device.path {

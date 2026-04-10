@@ -5,7 +5,7 @@
 use crate::media::{SensorRange, SensorSourceConfig};
 use crate::sensors::{find_default_cpu_temp, SensorInfo, SensorSource};
 use crate::template::{
-    BarOrientation, BuiltinAsset, BuiltinFont, FontRef, LcdTemplate, TemplateBackground, TextAlign,
+    BarOrientation, BuiltinAsset, FontRef, LcdTemplate, TemplateBackground, TextAlign,
     Widget, WidgetKind,
 };
 
@@ -134,9 +134,7 @@ fn builtin_cooler() -> LcdTemplate {
                 "label-cpu",
                 WidgetKind::Label {
                     text: "CPU".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::JetBrainsMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 26.0,
                     color: label_color,
                     align: TextAlign::Center,
@@ -150,9 +148,7 @@ fn builtin_cooler() -> LcdTemplate {
                 "label-temp",
                 WidgetKind::Label {
                     text: "TEMP".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::JetBrainsMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 26.0,
                     color: label_color,
                     align: TextAlign::Center,
@@ -166,9 +162,7 @@ fn builtin_cooler() -> LcdTemplate {
                 "label-cores",
                 WidgetKind::Label {
                     text: "CPU CORES".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::JetBrainsMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 26.0,
                     color: label_color,
                     align: TextAlign::Center,
@@ -224,9 +218,7 @@ fn builtin_cooler() -> LcdTemplate {
                     source: SensorSourceConfig::CpuUsage,
                     format: "{:.0}".to_string(),
                     unit: "%".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::JetBrainsMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 39.0,
                     color: value_color,
                     align: TextAlign::Center,
@@ -245,9 +237,7 @@ fn builtin_cooler() -> LcdTemplate {
                     source: SensorSourceConfig::CpuUsage,
                     format: "{:.0}".to_string(),
                     unit: "°C".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::JetBrainsMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 39.0,
                     color: value_color,
                     align: TextAlign::Center,
@@ -301,9 +291,7 @@ fn builtin_doublegauge() -> LcdTemplate {
                 "label-header",
                 WidgetKind::Label {
                     text: "CPU".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::VictorMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 50.0,
                     color: header_color,
                     align: TextAlign::Center,
@@ -317,9 +305,7 @@ fn builtin_doublegauge() -> LcdTemplate {
                 "label-1",
                 WidgetKind::Label {
                     text: "USAGE".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::VictorMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 34.0,
                     color: label_color,
                     align: TextAlign::Center,
@@ -333,9 +319,7 @@ fn builtin_doublegauge() -> LcdTemplate {
                 "label-2",
                 WidgetKind::Label {
                     text: "TEMP".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::VictorMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 34.0,
                     color: label_color,
                     align: TextAlign::Center,
@@ -393,9 +377,7 @@ fn builtin_doublegauge() -> LcdTemplate {
                     source: SensorSourceConfig::CpuUsage,
                     format: "{:.0}".to_string(),
                     unit: "%".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::VictorMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 70.0,
                     color: value_outer_green,
                     align: TextAlign::Center,
@@ -414,9 +396,7 @@ fn builtin_doublegauge() -> LcdTemplate {
                     source: SensorSourceConfig::CpuUsage,
                     format: "{:.0}".to_string(),
                     unit: "°C".to_string(),
-                    font: FontRef::Builtin {
-                        font: BuiltinFont::VictorMono,
-                    },
+                    font: FontRef::default(),
                     font_size: 70.0,
                     color: value_inner_blue,
                     align: TextAlign::Center,

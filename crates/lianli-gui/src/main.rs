@@ -886,8 +886,6 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared, editor: &editor::Edi
                     | "media_type"
                     | "orientation"
                     | "sensor_source"
-                    | "doublegauge_display_1"
-                    | "doublegauge_display_2"
                     | "template_label"
                     | "template_id"
             ) || field_str == "gauge_range_add"
@@ -903,9 +901,7 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared, editor: &editor::Edi
                         .next()
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
-                    let is_sensor_picker = field_str == "sensor_source"
-                        || field_str == "doublegauge_display_1"
-                        || field_str == "doublegauge_display_2";
+                    let is_sensor_picker = field_str == "sensor_source";
                     if is_sensor_picker && !val_str.ends_with("Custom command") && sensor_idx > 0 {
                         state.available_sensors.get(sensor_idx - 1).map(|sensor| {
                             match &sensor.source {
@@ -974,16 +970,6 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared, editor: &editor::Edi
                                         lcd.sensor.get_or_insert_with(default_sensor);
                                         lcd.path = None;
                                         lianli_shared::media::MediaType::Sensor
-                                    }
-                                    "Doublegauge" => {
-                                        lcd.doublegauge.get_or_insert_with(default_doublegauge);
-                                        lcd.path = None;
-                                        lianli_shared::media::MediaType::Doublegauge
-                                    }
-                                    "Cooler" => {
-                                        lcd.doublegauge.get_or_insert_with(default_doublegauge);
-                                        lcd.path = None;
-                                        lianli_shared::media::MediaType::Cooler
                                     }
                                     "Custom" => {
                                         if lcd
@@ -1157,132 +1143,6 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared, editor: &editor::Edi
                                     color: [0, 200, 0],
                                     alpha: 255,
                                 });
-                            }
-                            "doublegauge_header" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .header = val;
-                            }
-                            "doublegauge_display_1" => {
-                                if let Some(source) = resolved_sensor_source.clone() {
-                                    lcd.sensor_source_1 = source;
-                                }
-                                // "Custom command" / no selection: leave the existing
-                                // sensor_source_1 untouched so the user can edit the
-                                // command in the sensor_command_1 field without losing it.
-                            }
-                            "sensor_command_1" => {
-                                lcd.sensor_source_1 =
-                                    lianli_shared::media::SensorSourceConfig::Command { cmd: val };
-                            }
-                            "doublegauge_display_2" => {
-                                if let Some(source) = resolved_sensor_source.clone() {
-                                    lcd.sensor_source_2 = source;
-                                }
-                            }
-                            "sensor_command_2" => {
-                                lcd.sensor_source_2 =
-                                    lianli_shared::media::SensorSourceConfig::Command { cmd: val };
-                            }
-                            "doublegauge_gauge_1_min" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .gauge_1_min = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_gauge_1_max" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .gauge_1_max = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_gauge_2_min" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .gauge_2_min = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_gauge_2_max" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .gauge_2_max = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_value_1_min" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .value_1_min = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_value_1_max" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .value_1_max = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_display_value_1_min" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .display_value_1_min = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_display_value_1_max" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .display_value_1_max = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_value_2_min" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .value_2_min = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_value_2_max" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .value_2_max = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_display_value_2_min" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .display_value_2_min = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_display_value_2_max" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .display_value_2_max = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_label_1" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .label_1 = val;
-                            }
-                            "doublegauge_label_2" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .label_2 = val;
-                            }
-                            "doublegauge_unit_1" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .unit_1 = val;
-                            }
-                            "doublegauge_unit_2" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .unit_2 = val;
-                            }
-                            "doublegauge_decimals_1" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .decimals_1 = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_decimals_2" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .decimals_2 = val.parse().unwrap_or(0);
-                            }
-                            "doublegauge_clamp_1" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .clamp_1 = val == "true";
-                            }
-                            "doublegauge_clamp_2" => {
-                                lcd.doublegauge
-                                    .get_or_insert_with(default_doublegauge)
-                                    .clamp_2 = val == "true";
                             }
 
                             f if f.starts_with("gauge_range_remove") => {
@@ -1692,36 +1552,6 @@ fn default_sensor() -> lianli_shared::media::SensorDescriptor {
         value_offset: 0,
         unit_offset: 0,
         label_offset: 0,
-    }
-}
-
-fn default_doublegauge() -> lianli_shared::media::DoublegaugeDescriptor {
-    // Defaults assume the typical Cooler layout (left = CPU usage %, right = temp °C).
-    // Doublegauge users will need to retune both halves to taste anyway.
-    lianli_shared::media::DoublegaugeDescriptor {
-        header: "CPU".to_string(),
-
-        gauge_1_min: 0,
-        gauge_1_max: 100,
-        value_1_min: 0,
-        value_1_max: 100,
-        display_value_1_min: 0,
-        display_value_1_max: 100,
-        clamp_1: true,
-        unit_1: "%".to_string(),
-        label_1: "USAGE".to_string(),
-        decimals_1: 0,
-
-        gauge_2_min: 0,
-        gauge_2_max: 100,
-        value_2_min: 0,
-        value_2_max: 100,
-        display_value_2_min: 0,
-        display_value_2_max: 100,
-        clamp_2: true,
-        unit_2: "\u{00B0}C".to_string(),
-        label_2: "TEMP".to_string(),
-        decimals_2: 0,
     }
 }
 

@@ -140,12 +140,17 @@ impl SensorAsset {
             }
         };
 
-        let font = if let Some(font_path) = &descriptor.font_path {
-            let font_data = std::fs::read(font_path)
+        let font_path = descriptor
+            .font_path
+            .clone()
+            .or_else(lianli_shared::fonts::default_font_path);
+        let font = if let Some(path) = font_path {
+            let font_data = std::fs::read(&path)
                 .map_err(|e| MediaError::Sensor(format!("Failed to read font file: {e}")))?;
-            let font = Font::try_from_vec(font_data)
-                .ok_or_else(|| MediaError::Sensor("Failed to parse font file".to_string()))?;
-            Some(font)
+            Some(
+                Font::try_from_vec(font_data)
+                    .ok_or_else(|| MediaError::Sensor("Failed to parse font file".to_string()))?,
+            )
         } else {
             None
         };
