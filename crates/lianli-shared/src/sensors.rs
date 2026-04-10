@@ -103,6 +103,7 @@ pub enum ResolvedSensor {
     ShellCommand(String),
     RuntimeFile(PathBuf),
     Virtual { source: SensorSource, divider: usize },
+    Constant(f32),
 }
 
 pub fn enumerate_sensors() -> Vec<SensorInfo> {
@@ -653,6 +654,7 @@ pub fn read_sensor_value(resolved: &ResolvedSensor) -> anyhow::Result<f32> {
             }
             Ok(temp)
         }
+        ResolvedSensor::Constant(value) => Ok(*value),
     }
 }
 
