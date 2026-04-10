@@ -890,7 +890,7 @@ impl ServiceManager {
                             MediaType::Video => info!("Prepared video for LCD[{device_id}]"),
                             MediaType::Gif => info!("Prepared GIF for LCD[{device_id}]"),
                             MediaType::Doublegauge => info!("Prepared Doublegauge for LCD[{device_id}]"),
-                            MediaType::Cooler => info!("Prepared Cooler for  LCD[{device_id}]"),
+                            MediaType::Cooler => info!("Prepared Cooler for LCD[{device_id}]"),
                             MediaType::Color => info!("Prepared color frame for LCD[{device_id}]"),
                             MediaType::Sensor => info!(
                                 "Prepared sensor for LCD[{device_id}]: {}",
@@ -1642,8 +1642,6 @@ impl Drop for AsyncVideoPlayer {
 
 
 struct AsyncDoublegaugeRenderer {
-    #[allow(dead_code)] // We'd like to keep it, who knows if we'll need it
-    asset: Arc<DoublegaugeAsset>,
     current_frame: Arc<Mutex<FrameInfo>>,
     stop_flag: Arc<AtomicBool>,
     _thread: Option<JoinHandle<()>>,
@@ -1704,7 +1702,6 @@ impl AsyncDoublegaugeRenderer {
         });
 
         Self {
-            asset,
             current_frame,
             stop_flag,
             _thread: Some(thread),
@@ -1728,8 +1725,6 @@ impl Drop for AsyncDoublegaugeRenderer {
 }
 
 struct AsyncCoolerRenderer {
-    #[allow(dead_code)] // We'd like to keep it, who knows if we'll need it
-    asset: Arc<CoolerAsset>,
     current_frame: Arc<Mutex<FrameInfo>>,
     stop_flag: Arc<AtomicBool>,
     _thread: Option<JoinHandle<()>>,
@@ -1789,7 +1784,6 @@ impl AsyncCoolerRenderer {
         });
 
         Self {
-            asset,
             current_frame,
             stop_flag,
             _thread: Some(thread),

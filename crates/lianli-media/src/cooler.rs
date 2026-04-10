@@ -18,11 +18,11 @@ use lianli_shared::media::DoublegaugeDescriptor;
 use lianli_shared::screen::ScreenInfo;
 use lianli_shared::sensors::ResolvedSensor;
 use lianli_shared::systeminfo::SysSensor;
+use parking_lot::Mutex;
 use rusttype::{Font, Scale};
 use std::f32::consts::PI;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use tracing::warn;
 
@@ -99,7 +99,7 @@ impl CoolerAsset {
         let dynamic_img =
             ::image::load_from_memory(data).map_err(|e| MediaError::ImageError(e.to_string()))?;
 
-        // The whole image was originally ment for a cooler LCD display with 480x480 resolution.
+        // The bundled image is authored for a 480x480 cooler LCD; we rescale below.
         let x_scale = (screen.width as f32) / 480.0;
         let y_scale = (screen.height as f32) / 480.0;
 
@@ -166,7 +166,7 @@ impl CoolerAsset {
             box_y as i32,
             scale,
             &font_label,
-            label1, // Dein Text aus der Struct
+            label1,
         );
 
         let (tw, _, _, _, _) = get_exact_text_metrics(&font_label, label2, scale);
@@ -309,7 +309,7 @@ impl CoolerAsset {
     /// Force flag: if true, frame gets rendered even if value has not changed. For example when we render the first frame, we set force=true
     /// Returns OK(Empty) in case of "nothing changed", OK(FrameInfo) in case a new frame has been rendered, and Error in case of an error
     pub fn render_frame(&self, force: bool) -> Result<Option<FrameInfo>, MediaError> {
-        let mut data = self.sys_data.lock().unwrap();
+        let mut data = self.sys_data.lock();
 
         let usage_per_core = SysSensor::get_core_usage();
         // Quantize per-core usage to whole percent (SysSensor reports 0..=10000),
@@ -361,7 +361,7 @@ impl CoolerAsset {
 
         // Calculate color (120° -> 0°)
         let hue = 120.0 * (1.0 - sensor_left_range);
-        let rgb = hsl_to_rgb(hue, 1.0, 0.5); // Nutzt deine vorhandene Funktion
+        let rgb = hsl_to_rgb(hue, 1.0, 0.5);
         let color = Rgba([rgb[0], rgb[1], rgb[2], 255]);
 
         let font_label = &self.font_label;
@@ -503,7 +503,7 @@ impl CoolerAsset {
 
             // 2. Calculate color (120° -> 0°)
             let hue = 120.0 * (1.0 - clamped_usage);
-            let rgb = hsl_to_rgb(hue, 1.0, 0.5); // Nutzt deine vorhandene Funktion
+            let rgb = hsl_to_rgb(hue, 1.0, 0.5);
             let color = Rgba([rgb[0], rgb[1], rgb[2], 255]);
 
             // 3. Determine position and height
@@ -604,7 +604,7 @@ fn draw_gauge_needle(
     angle_deg: f32,
     start_length: f32,
     length: f32,
-    width: i32, // Linienstärke
+    width: i32, // line thickness
     color: Rgba<u8>,
 ) {
     let mut dreieck: Vec<Point<f32>> = vec![];

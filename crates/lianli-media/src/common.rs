@@ -121,12 +121,12 @@ pub fn get_exact_text_metrics(font: &Font, text: &str, scale: Scale) -> (i32, i3
         return (0, 0, 0, 0, 0.0);
     }
 
-    // Breite und Höhe der tatsächlich belegten Pixel
+    // Width and height of the pixels actually occupied by the glyphs.
     let width = max_x - min_x;
     let height = max_y - min_y;
 
-    // min_x und min_y sind der Versatz der Pixel zum Ankerpunkt (0,0)
-    // min_y ist bei Text fast immer negativ (da über der Baseline)
+    // min_x and min_y are the pixel offsets from the anchor point (0, 0).
+    // min_y is almost always negative for text (glyphs sit above the baseline).
 
     let v_metrics = font.v_metrics(scale);
 

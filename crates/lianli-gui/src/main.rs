@@ -1296,18 +1296,20 @@ fn default_sensor() -> lianli_shared::media::SensorDescriptor {
 }
 
 fn default_doublegauge() -> lianli_shared::media::DoublegaugeDescriptor {
+    // Defaults assume the typical Cooler layout (left = CPU usage %, right = temp °C).
+    // Doublegauge users will need to retune both halves to taste anyway.
     lianli_shared::media::DoublegaugeDescriptor {
         header: "CPU".to_string(),
 
-        gauge_1_min: 45,
-        gauge_1_max: 85,
-        value_1_min: 45,
-        value_1_max: 85,
-        display_value_1_min: 45,
-        display_value_1_max: 85,
-        clamp_1: false,
-        unit_1: "\u{00B0}C".to_string(),
-        label_1: "TEMP".to_string(),
+        gauge_1_min: 0,
+        gauge_1_max: 100,
+        value_1_min: 0,
+        value_1_max: 100,
+        display_value_1_min: 0,
+        display_value_1_max: 100,
+        clamp_1: true,
+        unit_1: "%".to_string(),
+        label_1: "USAGE".to_string(),
         decimals_1: 0,
 
         gauge_2_min: 45,
@@ -1320,7 +1322,6 @@ fn default_doublegauge() -> lianli_shared::media::DoublegaugeDescriptor {
         unit_2: "\u{00B0}C".to_string(),
         label_2: "TEMP".to_string(),
         decimals_2: 0,
-
     }
 }
 

@@ -9,11 +9,11 @@ use imageproc::point::Point;
 use lianli_shared::media::DoublegaugeDescriptor;
 use lianli_shared::screen::ScreenInfo;
 use lianli_shared::sensors::ResolvedSensor;
+use parking_lot::Mutex;
 use rusttype::{Font, Scale};
 use std::f32::consts::PI;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use tracing::warn;
 
@@ -442,8 +442,8 @@ impl DoublegaugeAsset {
             unit = self.unit_2
         );
         {
-            let prev_outer = self.previous_outer_gauge_value.lock().unwrap();
-            let prev_inner = self.previous_inner_gauge_value.lock().unwrap();
+            let prev_outer = self.previous_outer_gauge_value.lock();
+            let prev_inner = self.previous_inner_gauge_value.lock();
 
             if prev_outer.as_deref() == Some(metric_outer_gauge_text.as_str())
                 && prev_inner.as_deref() == Some(metric_inner_gauge_text.as_str())
@@ -453,8 +453,8 @@ impl DoublegaugeAsset {
             }
         }
 
-        *self.previous_outer_gauge_value.lock().unwrap() = Some(metric_outer_gauge_text.clone());
-        *self.previous_inner_gauge_value.lock().unwrap() = Some(metric_inner_gauge_text.clone());
+        *self.previous_outer_gauge_value.lock() = Some(metric_outer_gauge_text.clone());
+        *self.previous_inner_gauge_value.lock() = Some(metric_inner_gauge_text.clone());
 
         // A pure in-memory-copy-operation (fast)
         let mut frame = self.template_image.clone();
@@ -485,7 +485,7 @@ impl DoublegaugeAsset {
             box_y - oy,
             scale,
             &self.font,
-            &metric_outer_gauge_text, // Dein Text aus der Struct
+            &metric_outer_gauge_text,
         );
 
         let (tw, _, ox, oy, _) =
@@ -623,7 +623,7 @@ fn draw_rotated_text_on_circle(
     let color_gray = Rgba([150, 180, 255, 255]);
 
     let mut current_angle = start_angle_deg * PI / 180.0;
-    let angle_step = 12.0 * PI / 180.0; // Abstand zwischen Buchstaben
+    let angle_step = 12.0 * PI / 180.0; // angular spacing between characters
 
     for c in text.chars() {
         // 1. Temporary image for each char (e.g. 40x40 pixel)
@@ -646,7 +646,7 @@ fn draw_rotated_text_on_circle(
             &char_img,
             rotation_angle,
             Interpolation::Bicubic,
-            Rgba([0, 0, 0, 0]), // Transparenter Hintergrund für die Ecken
+            Rgba([0, 0, 0, 0]), // transparent background for the corners
         );
 
         // 3. Calculate position on circle
@@ -671,7 +671,7 @@ fn draw_smooth_segment_blended(
 ) {
     let mut points = vec![];
 
-    let steps = ((end_deg - start_deg) / 10.0) as i32; // Je mehr Schritte, desto runder der Bogen
+    let steps = ((end_deg - start_deg) / 10.0) as i32; // more steps -> smoother arc
     if steps == 0 {
         return;
     }
