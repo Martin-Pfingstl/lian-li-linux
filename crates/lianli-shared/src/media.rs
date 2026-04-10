@@ -102,7 +102,7 @@ pub struct SensorDescriptor {
     pub gauge_background_color: [u8; 3],
     #[serde(default = "default_ranges")]
     pub gauge_ranges: Vec<SensorRange>,
-    // Legacy: pre-0.3.4 configs stored the poll rate here. Kept solely so
+    // Legacy: pre-0.3.3 configs stored the poll rate here. Kept solely so
     // `Config::load` can promote it to `LcdConfig::update_interval_ms` during
     // migration. New code should not read or write this field.
     #[serde(default)]

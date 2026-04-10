@@ -90,6 +90,7 @@ pub struct CoolerAsset {
     scale_uniform: f32,
 
     font_label: Font<'static>,
+    font_digital7: Font<'static>,
 
     sensor_1_failed: AtomicBool,
     sensor_2_failed: AtomicBool,
@@ -221,75 +222,6 @@ impl CoolerAsset {
             &label3,
         );
 
-        // How many cores do we have?
-        let usage_per_core = SysSensor::get_core_usage();
-
-        let mut num_cores = usage_per_core.len() as i32;
-        if num_cores == 0 {
-            // Normally never 0...
-            num_cores = 1;
-        }
-
-        // 228px wide chart at the 480x480 base.
-        let space = ((228.0 * x_scale).round() as i32).max(1);
-        let size_per_core = (space / num_cores).max(1);
-
-        let remaining_pixel = space - size_per_core * (num_cores as i32);
-
-        // These pixels will be put in the middle...
-
-        let border_dark = ::image::Rgba([80, 90, 100, 255]);
-        let border_shadow = ::image::Rgba([230, 238, 246, 255]);
-
-        let y = (407.0 * y_scale).round() as i32;
-
-        for i in 0..num_cores - 1 {
-            let mut x = (129.0 * x_scale) as i32 + i * size_per_core;
-            if i >= num_cores / 2 {
-                x += remaining_pixel;
-            }
-            draw_antialiased_line_segment_mut(
-                &mut resized,
-                (x, y),
-                (x, y - 10),
-                border_dark,
-                interpolate,
-            );
-            draw_antialiased_line_segment_mut(
-                &mut resized,
-                (x, y - 10),
-                (x + size_per_core - 1, y - 10),
-                border_dark,
-                interpolate,
-            );
-            draw_antialiased_line_segment_mut(
-                &mut resized,
-                (x + size_per_core - 1, y - 10),
-                (x + size_per_core - 1, y),
-                border_shadow,
-                interpolate,
-            );
-            draw_antialiased_line_segment_mut(
-                &mut resized,
-                (x + size_per_core - 1, y),
-                (x, y),
-                border_shadow,
-                interpolate,
-            );
-
-            let s = ((i + 1) % 10).to_string();
-
-            draw_text_mut(
-                &mut resized,
-                rgb_lightgrey,
-                x + 2,
-                y - 8 as i32,
-                Scale::uniform(9.0 * uniform_scale),
-                &font_digital7,
-                &s,
-            );
-        }
-
         Ok(Arc::new(Self {
             unit1: unit1.into(),
             unit2: unit2.into(),
@@ -323,6 +255,7 @@ impl CoolerAsset {
             scale_y: y_scale,
             scale_uniform: uniform_scale,
             font_label,
+            font_digital7,
             sensor_1_failed: AtomicBool::new(false),
             sensor_2_failed: AtomicBool::new(false),
             frame_index: 1.into(),
@@ -513,6 +446,15 @@ impl CoolerAsset {
         let y_base = (391.0 * y_scale).round() as i32;
         let x_offset = (114.0 * x_scale).round() as i32;
 
+        Self::draw_core_separators(
+            &mut frame,
+            num_cores as i32,
+            x_scale,
+            y_scale,
+            uniform_scale,
+            &self.font_digital7,
+        );
+
         for (i, &usage) in usage_per_core.iter().enumerate() {
             // 1. limit load (0.0 to 1.0)
             let core_load = (usage / 100).clamp(0, 100);
@@ -575,6 +517,66 @@ impl CoolerAsset {
             data: jpeg,
             frame_index: self.frame_index.fetch_add(1, Ordering::SeqCst),
         }))
+    }
+
+    fn draw_core_separators(
+        frame: &mut RgbaImage,
+        num_cores: i32,
+        x_scale: f32,
+        y_scale: f32,
+        uniform_scale: f32,
+        font_digital7: &Font<'static>,
+    ) {
+        let space = ((228.0 * x_scale).round() as i32).max(1);
+        let size_per_core = (space / num_cores).max(1);
+        let remaining_pixel = space - size_per_core * num_cores;
+
+        let border_dark = ::image::Rgba([80, 90, 100, 255]);
+        let border_shadow = ::image::Rgba([230, 238, 246, 255]);
+        let rgb_lightgrey = ::image::Rgba([230, 238, 246, 255]);
+
+        let y = (407.0 * y_scale).round() as i32;
+
+        for i in 0..num_cores - 1 {
+            let mut x = (129.0 * x_scale) as i32 + i * size_per_core;
+            if i >= num_cores / 2 {
+                x += remaining_pixel;
+            }
+            draw_antialiased_line_segment_mut(frame, (x, y), (x, y - 10), border_dark, interpolate);
+            draw_antialiased_line_segment_mut(
+                frame,
+                (x, y - 10),
+                (x + size_per_core - 1, y - 10),
+                border_dark,
+                interpolate,
+            );
+            draw_antialiased_line_segment_mut(
+                frame,
+                (x + size_per_core - 1, y - 10),
+                (x + size_per_core - 1, y),
+                border_shadow,
+                interpolate,
+            );
+            draw_antialiased_line_segment_mut(
+                frame,
+                (x + size_per_core - 1, y),
+                (x, y),
+                border_shadow,
+                interpolate,
+            );
+
+            let s = ((i + 1) % 10).to_string();
+
+            draw_text_mut(
+                frame,
+                rgb_lightgrey,
+                x + 2,
+                y - 8,
+                Scale::uniform(9.0 * uniform_scale),
+                font_digital7,
+                &s,
+            );
+        }
     }
 
     pub fn blank_frame(&self) -> FrameInfo {
