@@ -150,17 +150,17 @@ pub fn prepare_media_asset(
 
 fn resolve_sensor_config(
     cfg_source: &SensorSourceConfig,
-    all_sensors: &[SensorInfo], // Annahme: Der Typ heißt SensorInfo
+    all_sensors: &[SensorInfo],
 ) -> Result<lianli_shared::sensors::ResolvedSensor, MediaError> {
     match cfg_source {
         SensorSourceConfig::Constant { value } => {
-            Ok(lianli_shared::sensors::ResolvedSensor::ShellCommand(format!("echo {value}")))
+            Ok(lianli_shared::sensors::ResolvedSensor::Constant(*value))
         }
         _ => {
             let sensor_source = cfg_source.to_sensor_source();
             let sensor_info = all_sensors.iter().find(|s| s.source == sensor_source);
             let divider = sensor_info.map_or(1, |s| s.divider);
-            
+
             lianli_shared::sensors::resolve_sensor(&sensor_source, divider)
                 .ok_or_else(|| MediaError::Sensor("sensor not found on system".into()))
         }
