@@ -134,7 +134,10 @@ impl WinUsbLcdDevice {
             match self.send_frame(frame) {
                 Ok(()) => return Ok(()),
                 Err(e) if attempt < 2 => {
-                    warn!("Frame send failed (attempt {}): {e}, reinitializing", attempt + 1);
+                    warn!(
+                        "Frame send failed (attempt {}): {e}, reinitializing",
+                        attempt + 1
+                    );
                     self.initialized = false;
                 }
                 Err(e) => return Err(e),
@@ -264,7 +267,10 @@ impl WinUsbLcdDevice {
     }
 
     fn do_init(&mut self) -> Result<()> {
-        info!("Initializing LCD ({}x{}, quality {})", self.screen.width, self.screen.height, self.screen.jpeg_quality);
+        info!(
+            "Initializing LCD ({}x{}, quality {})",
+            self.screen.width, self.screen.height, self.screen.jpeg_quality
+        );
         self.transport.read_flush();
 
         let ver = self.builder.get_ver_header_winusb();
@@ -313,8 +319,10 @@ impl WinUsbLcdDevice {
         let jpg_img = ImageBuffer::from_pixel(w, h, Rgb([0u8, 0, 0]));
         let mut jpg_buf = Vec::new();
         {
-            let mut encoder =
-                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg_buf, self.screen.jpeg_quality);
+            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                &mut jpg_buf,
+                self.screen.jpeg_quality,
+            );
             if let Err(e) = encoder.encode_image(&jpg_img) {
                 warn!("Failed to encode blank JPEG: {e}");
                 return;
@@ -355,7 +363,10 @@ impl WinUsbLcdDevice {
         let mut buf = [0u8; 512];
         match self.transport.read(&mut buf, timeout) {
             Ok(n) if n > 0 => {
-                debug!("Response for {context} ({n} bytes): {:02x?}", &buf[..n.min(32)]);
+                debug!(
+                    "Response for {context} ({n} bytes): {:02x?}",
+                    &buf[..n.min(32)]
+                );
                 self.last_read_ok = true;
                 self.transport.read_flush();
                 return Some(buf);

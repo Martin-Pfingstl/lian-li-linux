@@ -178,11 +178,19 @@ impl PacketBuilder {
     pub fn sync_clock_header_winusb(&mut self, mode: u8) -> Vec<u8> {
         let now = time::OffsetDateTime::now_utc();
         let y = now.year() as u16;
-        self.build_winusb(CMD_SET_CLOCK, &[
-            (y >> 8) as u8, (y & 0xFF) as u8,
-            now.month() as u8, now.day(), now.hour(), now.minute(), now.second(),
-            mode,
-        ])
+        self.build_winusb(
+            CMD_SET_CLOCK,
+            &[
+                (y >> 8) as u8,
+                (y & 0xFF) as u8,
+                now.month() as u8,
+                now.day(),
+                now.hour(),
+                now.minute(),
+                now.second(),
+                mode,
+            ],
+        )
     }
 
     pub fn stop_clock_header_winusb(&mut self) -> Vec<u8> {

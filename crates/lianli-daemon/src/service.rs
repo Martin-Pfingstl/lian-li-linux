@@ -5,26 +5,27 @@ use crate::rgb_controller::RgbController;
 use anyhow::Result;
 use lianli_devices::crypto::PacketBuilder;
 use lianli_devices::detect::{
-    create_hid_lcd_device, create_wired_controllers,
-    ensure_hid_devices_bound, enumerate_devices, enumerate_hid_devices,
-    open_hid_backend_hidapi, open_hid_backend_rusb, open_hid_lcd_by_vid_pid,
+    create_hid_lcd_device, create_wired_controllers, ensure_hid_devices_bound, enumerate_devices,
+    enumerate_hid_devices, open_hid_backend_hidapi, open_hid_backend_rusb, open_hid_lcd_by_vid_pid,
     open_hid_lcd_device_rusb,
 };
-use lianli_media::sensor::FrameInfo;
-use lianli_shared::config::HidDriver;
-use lianli_shared::systeminfo::SysSensor;
-use lianli_transport::HidBackend;
 use lianli_devices::hydroshift_lcd::HydroShiftLcdController;
 use lianli_devices::slv3_lcd::Slv3LcdDevice;
 use lianli_devices::traits::FanDevice;
 use lianli_devices::winusb_lcd::WinUsbLcdDevice;
 use lianli_devices::wireless::WirelessController;
-use lianli_shared::device_id::DeviceFamily;
-use lianli_media::{prepare_media_asset, MediaAsset, MediaAssetKind, SensorAsset, CoolerAsset, DoublegaugeAsset};
+use lianli_media::sensor::FrameInfo;
+use lianli_media::{
+    prepare_media_asset, CoolerAsset, DoublegaugeAsset, MediaAsset, MediaAssetKind, SensorAsset,
+};
+use lianli_shared::config::HidDriver;
 use lianli_shared::config::{config_identity, AppConfig, ConfigKey};
+use lianli_shared::device_id::DeviceFamily;
 use lianli_shared::ipc::DeviceInfo;
 use lianli_shared::media::MediaType;
 use lianli_shared::screen::{screen_info_for, ScreenInfo};
+use lianli_shared::systeminfo::SysSensor;
+use lianli_transport::HidBackend;
 use parking_lot::Mutex;
 use rusb::Device;
 use std::collections::HashMap;
@@ -46,8 +47,8 @@ pub enum DaemonEvent {
     IpcUpdate, // Somebody changed the DaemonState in the mutex
     USBCheck,
     DevicePoll,
-    DisplaySwitch{device_id: String}, // Device ID pending display mode switch (LCD→Desktop). Handled by main event loop.
-    Bind{mac_address: String}, // MAC address pending wireless device bind. Handled by main event loop.
+    DisplaySwitch { device_id: String }, // Device ID pending display mode switch (LCD→Desktop). Handled by main event loop.
+    Bind { mac_address: String }, // MAC address pending wireless device bind. Handled by main event loop.
     FrameFinished { asset: Arc<MediaAsset> }, // A device has calculated a new frame, let's update the display
 }
 
@@ -105,7 +106,9 @@ impl ServiceManager {
             openrgb_stop: Arc::new(AtomicBool::new(false)),
             openrgb_thread: None,
             openrgb_state: Arc::new(Mutex::new(openrgb_server::OpenRgbServerState::default())),
-            direct_color_buffer: Arc::new(Mutex::new(crate::rgb_controller::DirectColorBuffer::new())),
+            direct_color_buffer: Arc::new(Mutex::new(
+                crate::rgb_controller::DirectColorBuffer::new(),
+            )),
             direct_color_writer: None,
             tx: None,
         })
@@ -149,7 +152,8 @@ impl ServiceManager {
             return Ok(Arc::clone(backend));
         }
         let backend = open_hid_backend_hidapi(api, det)?;
-        self.hid_backends.insert(key.to_string(), Arc::clone(&backend));
+        self.hid_backends
+            .insert(key.to_string(), Arc::clone(&backend));
         Ok(backend)
     }
 
@@ -242,10 +246,12 @@ impl ServiceManager {
                 DaemonEvent::DevicePoll => {
                     self.device_poll();
                 }
-                DaemonEvent::DisplaySwitch{ device_id } => {
+                DaemonEvent::DisplaySwitch { device_id } => {
                     self.handle_display_switch_to_desktop(&device_id);
                 }
-                DaemonEvent::Bind { mac_address: mac_str } => {
+                DaemonEvent::Bind {
+                    mac_address: mac_str,
+                } => {
                     if let Some(mac) = parse_mac_str(&mac_str) {
                         if let Err(e) = self.wireless.bind_device(&mac) {
                             warn!("Failed to bind wireless device {mac_str}: {e}");
@@ -414,7 +420,8 @@ impl ServiceManager {
                 has_pump_control: is_aio,
                 fan_count: Some(fan_count),
                 per_fan_control: Some(!is_rgb_only),
-                mb_sync_support: dev.fan_type.supports_hw_mobo_sync() || self.wireless.motherboard_pwm().is_some(),
+                mb_sync_support: dev.fan_type.supports_hw_mobo_sync()
+                    || self.wireless.motherboard_pwm().is_some(),
                 rgb_zone_count: Some(rgb_zone_count),
                 screen_width: None,
                 screen_height: None,
@@ -430,7 +437,10 @@ impl ServiceManager {
             ipc_state.telemetry.fan_rpms.insert(device_id.clone(), rpms);
 
             if let Some(temp) = dev.coolant_temp_c {
-                ipc_state.telemetry.coolant_temps.insert(device_id.clone(), temp as f32);
+                ipc_state
+                    .telemetry
+                    .coolant_temps
+                    .insert(device_id.clone(), temp as f32);
                 lianli_shared::sensors::write_coolant_temp(&device_id, temp as f32);
             }
         }
@@ -606,9 +616,15 @@ impl ServiceManager {
                 };
                 if let Some(result) = create_wired_controllers(det.family, det.pid, backend) {
                     self.register_wired_controllers(
-                        &base_id, det.name, det.family, det.vid, det.pid,
+                        &base_id,
+                        det.name,
+                        det.family,
+                        det.vid,
+                        det.pid,
                         det.serial.as_deref(),
-                        result, &mut fan_devices, &mut wired_rgb,
+                        result,
+                        &mut fan_devices,
+                        &mut wired_rgb,
                     );
                 }
             }
@@ -633,9 +649,15 @@ impl ServiceManager {
                 };
                 if let Some(result) = create_wired_controllers(det.family, det.pid, backend) {
                     self.register_wired_controllers(
-                        &base_id, det.name, det.family, det.vid, det.pid,
+                        &base_id,
+                        det.name,
+                        det.family,
+                        det.vid,
+                        det.pid,
                         det.serial.as_deref(),
-                        result, &mut fan_devices, &mut wired_rgb,
+                        result,
+                        &mut fan_devices,
+                        &mut wired_rgb,
                     );
                 }
             }
@@ -759,8 +781,8 @@ impl ServiceManager {
 
         // Check if we need to restart (port changed or toggled)
         let current_state = self.openrgb_state.lock().clone();
-        let needs_restart = self.openrgb_thread.is_some()
-            && (current_state.port != Some(port) || !enabled);
+        let needs_restart =
+            self.openrgb_thread.is_some() && (current_state.port != Some(port) || !enabled);
 
         if needs_restart {
             info!("Stopping OpenRGB server for reconfiguration");
@@ -794,29 +816,25 @@ impl ServiceManager {
             ));
             // Start the async writer thread that flushes buffered colors at 30fps
             if self.direct_color_writer.is_none() {
-                self.direct_color_writer =
-                    Some(crate::rgb_controller::start_direct_color_writer(
-                        Arc::clone(rgb),
-                        Arc::clone(&self.direct_color_buffer),
-                        Arc::clone(&self.openrgb_stop),
-                    ));
+                self.direct_color_writer = Some(crate::rgb_controller::start_direct_color_writer(
+                    Arc::clone(rgb),
+                    Arc::clone(&self.direct_color_buffer),
+                    Arc::clone(&self.openrgb_stop),
+                ));
             }
         }
     }
 
-
     /// Try to connect wireless TX/RX once. Non-blocking — if no dongles found, skip gracefully.
     fn try_wireless(&mut self) {
         match self.wireless.connect() {
-            Ok(()) => {
-                match self.wireless.start_polling() {
-                    Ok(()) => {
-                        let _ = self.wireless.send_rx_sequence();
-                        info!("Wireless links active");
-                    }
-                    Err(err) => warn!("[wireless] polling start failed: {err}"),
+            Ok(()) => match self.wireless.start_polling() {
+                Ok(()) => {
+                    let _ = self.wireless.send_rx_sequence();
+                    info!("Wireless links active");
                 }
-            }
+                Err(err) => warn!("[wireless] polling start failed: {err}"),
+            },
             Err(_) => {
                 debug!("[wireless] no TX/RX devices found, skipping wireless");
             }
@@ -878,10 +896,19 @@ impl ServiceManager {
                     .and_then(|s| screen_map.get(s).copied())
                     .unwrap_or(ScreenInfo::WIRELESS_LCD);
                 let cfg_key = config_identity(device);
-                match prepare_media_asset(device, cfg.default_fps, &screen, screen.h264, &all_sensors) {
+                match prepare_media_asset(
+                    device,
+                    cfg.default_fps,
+                    &screen,
+                    screen.h264,
+                    &all_sensors,
+                ) {
                     Ok(asset_kind) => {
                         let device_id = device.device_id();
-                        let asset = MediaAsset{kind: asset_kind, config_key: cfg_key};
+                        let asset = MediaAsset {
+                            kind: asset_kind,
+                            config_key: cfg_key,
+                        };
                         let asset_arc = Arc::new(asset);
                         self.media_assets.insert(idx, Arc::clone(&asset_arc));
 
@@ -889,12 +916,18 @@ impl ServiceManager {
                             MediaType::Image => info!("Prepared image for LCD[{device_id}]"),
                             MediaType::Video => info!("Prepared video for LCD[{device_id}]"),
                             MediaType::Gif => info!("Prepared GIF for LCD[{device_id}]"),
-                            MediaType::Doublegauge => info!("Prepared Doublegauge for LCD[{device_id}]"),
+                            MediaType::Doublegauge => {
+                                info!("Prepared Doublegauge for LCD[{device_id}]")
+                            }
                             MediaType::Cooler => info!("Prepared Cooler for LCD[{device_id}]"),
                             MediaType::Color => info!("Prepared color frame for LCD[{device_id}]"),
                             MediaType::Sensor => info!(
                                 "Prepared sensor for LCD[{device_id}]: {}",
-                                device.sensor.as_ref().map(|s| s.label.as_str()).unwrap_or("<unknown>")
+                                device
+                                    .sensor
+                                    .as_ref()
+                                    .map(|s| s.label.as_str())
+                                    .unwrap_or("<unknown>")
                             ),
                         }
                         tx.send(DaemonEvent::FrameFinished { asset: asset_arc })
@@ -939,7 +972,11 @@ impl ServiceManager {
                     continue;
                 }
                 let device_id = det.device_id();
-                let transport = if lianli_shared::device_id::uses_hid(det.family) { "HID" } else { "USB bulk" };
+                let transport = if lianli_shared::device_id::uses_hid(det.family) {
+                    "HID"
+                } else {
+                    "USB bulk"
+                };
                 debug!(
                     "LCD candidate: {} ({:04x}:{:04x}) id={device_id} ({transport})",
                     det.name, det.vid, det.pid
@@ -1033,7 +1070,11 @@ impl ServiceManager {
                     DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => {
                         // Try to reuse a shared HID backend (opened by init_rgb_controller).
                         if let Some(backend) = self.hid_backends.get(&candidate.device_id) {
-                            match create_hid_lcd_device(candidate.family, candidate.pid, Arc::clone(backend)) {
+                            match create_hid_lcd_device(
+                                candidate.family,
+                                candidate.pid,
+                                Arc::clone(backend),
+                            ) {
                                 Some(result) => result.map(LcdBackend::HidLcd),
                                 None => Err(anyhow::anyhow!("Not an LCD device")),
                             }
@@ -1055,12 +1096,8 @@ impl ServiceManager {
                                 None => Err(anyhow::anyhow!("Not an LCD device")),
                             }
                         } else {
-                            open_hid_lcd_by_vid_pid(
-                                candidate.vid,
-                                candidate.pid,
-                                candidate.family,
-                            )
-                            .map(LcdBackend::HidLcd)
+                            open_hid_lcd_by_vid_pid(candidate.vid, candidate.pid, candidate.family)
+                                .map(LcdBackend::HidLcd)
                         }
                     }
                     _ => unreachable!(),
@@ -1129,7 +1166,10 @@ impl ServiceManager {
         } else {
             // No active target — try opening a temporary connection
             info!("No active LCD target for {device_id}, opening temporary connection");
-            let det = self.cached_usb_devices.iter().find(|d| d.device_id == *device_id);
+            let det = self
+                .cached_usb_devices
+                .iter()
+                .find(|d| d.device_id == *device_id);
             if let Some(det) = det {
                 let family = det.family;
                 if let Ok(usb_devs) = lianli_devices::detect::enumerate_devices() {
@@ -1138,12 +1178,10 @@ impl ServiceManager {
                             let screen = lianli_shared::screen::screen_info_for(family)
                                 .unwrap_or(lianli_shared::screen::ScreenInfo::AIO_LCD_480);
                             match WinUsbLcdDevice::new(usb_det.device, screen, det.name.as_str()) {
-                                Ok(mut lcd) => {
-                                    match lcd.switch_to_desktop_mode() {
-                                        Ok(()) => info!("Switched {device_id} to desktop mode"),
-                                        Err(e) => warn!("Switch to desktop failed: {e}"),
-                                    }
-                                }
+                                Ok(mut lcd) => match lcd.switch_to_desktop_mode() {
+                                    Ok(()) => info!("Switched {device_id} to desktop mode"),
+                                    Err(e) => warn!("Switch to desktop failed: {e}"),
+                                },
                                 Err(e) => warn!("Failed to open {device_id} for mode switch: {e}"),
                             }
                             break;
@@ -1155,7 +1193,6 @@ impl ServiceManager {
             }
         }
     }
-
 
     fn stream_target(&mut self, this_asset: Arc<MediaAsset>) {
         // Find ID of matching target
@@ -1408,7 +1445,10 @@ impl ActiveTarget {
         self.asset = Arc::clone(&asset);
         self.media = MediaRuntime::from_asset(asset, tx);
         self.frame_counter = 0;
-        info!("[devices] LCD[{}] media swapped (keeping transport)", self.index);
+        info!(
+            "[devices] LCD[{}] media swapped (keeping transport)",
+            self.index
+        );
     }
 
     fn send_frame(
@@ -1417,12 +1457,17 @@ impl ActiveTarget {
         builder: &mut PacketBuilder,
     ) -> Result<bool, SendError> {
         // H264: start the stream on the LCD thread, then it runs autonomously
-        if let MediaRuntime::H264 { path, looping, started } = &mut self.media {
+        if let MediaRuntime::H264 {
+            path,
+            looping,
+            started,
+        } = &mut self.media
+        {
             if !*started {
                 if let LcdBackend::WinUsb(ref sender) = self.lcd {
-                    sender.stream_h264(path.clone(), *looping).map_err(|e| {
-                        SendError::Other(e)
-                    })?;
+                    sender
+                        .stream_h264(path.clone(), *looping)
+                        .map_err(|e| SendError::Other(e))?;
                     *started = true;
                 }
             }
@@ -1592,7 +1637,6 @@ impl AsyncVideoPlayer {
         } = &asset.kind
         {
             frame_durations.iter().map(|&d| d.max(min_dur)).collect()
-
         } else {
             vec![min_dur; 1]
         };
@@ -1640,7 +1684,6 @@ impl Drop for AsyncVideoPlayer {
     }
 }
 
-
 struct AsyncDoublegaugeRenderer {
     current_frame: Arc<Mutex<FrameInfo>>,
     stop_flag: Arc<AtomicBool>,
@@ -1648,11 +1691,11 @@ struct AsyncDoublegaugeRenderer {
 }
 
 impl AsyncDoublegaugeRenderer {
-    fn new(tx: Option<Sender<DaemonEvent>>,
+    fn new(
+        tx: Option<Sender<DaemonEvent>>,
         asset: Arc<DoublegaugeAsset>,
         baseasset: Arc<MediaAsset>,
     ) -> Self {
-
         let initial = match asset.render_frame(true) {
             Ok(Some(frame)) => frame,
             Ok(None) => asset.blank_frame(),
@@ -1667,7 +1710,7 @@ impl AsyncDoublegaugeRenderer {
         let update_interval = asset.update_interval();
 
         let asset_clone: Arc<DoublegaugeAsset> = Arc::clone(&asset);
-        
+
         let frame_clone = Arc::clone(&current_frame);
         let stop_clone = Arc::clone(&stop_flag);
 
@@ -1675,7 +1718,6 @@ impl AsyncDoublegaugeRenderer {
         let tx_for_thread = tx.clone();
 
         let thread = thread::spawn(move || {
-
             while !stop_clone.load(Ordering::Relaxed) {
                 thread::sleep(update_interval);
                 if stop_clone.load(Ordering::Relaxed) {
@@ -1708,7 +1750,6 @@ impl AsyncDoublegaugeRenderer {
         }
     }
 
-
     fn get_frame_index(&self) -> usize {
         self.current_frame.lock().frame_index
     }
@@ -1731,11 +1772,11 @@ struct AsyncCoolerRenderer {
 }
 
 impl AsyncCoolerRenderer {
-    fn new(tx: Option<Sender<DaemonEvent>>,
+    fn new(
+        tx: Option<Sender<DaemonEvent>>,
         asset: Arc<CoolerAsset>,
-        baseasset: Arc<MediaAsset>
+        baseasset: Arc<MediaAsset>,
     ) -> Self {
-
         let initial = match asset.render_frame(true) {
             Ok(Some(frame)) => frame,
             Ok(None) => asset.blank_frame(),
@@ -1757,7 +1798,6 @@ impl AsyncCoolerRenderer {
         let tx_for_thread = tx.clone();
 
         let thread = thread::spawn(move || {
-
             while !stop_clone.load(Ordering::Relaxed) {
                 thread::sleep(update_interval);
                 if stop_clone.load(Ordering::Relaxed) {
@@ -1797,7 +1837,6 @@ impl AsyncCoolerRenderer {
     fn get_current_frame(&self) -> Vec<u8> {
         self.current_frame.lock().data.clone()
     }
-
 }
 
 impl Drop for AsyncCoolerRenderer {
@@ -1805,7 +1844,6 @@ impl Drop for AsyncCoolerRenderer {
         self.stop_flag.store(true, Ordering::Relaxed);
     }
 }
-
 
 impl MediaRuntime {
     fn from_asset(asset: Arc<MediaAsset>, tx: Option<Sender<DaemonEvent>>) -> Self {
@@ -1843,13 +1881,13 @@ impl MediaRuntime {
                 looping: *looping,
                 started: false,
             },
-            MediaAssetKind::Doublegauge { 
+            MediaAssetKind::Doublegauge {
                 asset: doublegauge_asset,
-             } => {
+            } => {
                 let renderer = Arc::new(AsyncDoublegaugeRenderer::new(
                     tx,
                     Arc::clone(doublegauge_asset),
-                    Arc::clone(&asset)
+                    Arc::clone(&asset),
                 ));
 
                 let cached_frame = renderer.get_current_frame();
@@ -1859,13 +1897,13 @@ impl MediaRuntime {
                     sent_frame_index: 0,
                 }
             }
-            MediaAssetKind::Cooler { 
+            MediaAssetKind::Cooler {
                 asset: cooler_asset,
-             } => {
+            } => {
                 let renderer = Arc::new(AsyncCoolerRenderer::new(
                     tx,
                     Arc::clone(cooler_asset),
-                    Arc::clone(&asset)
+                    Arc::clone(&asset),
                 ));
 
                 let cached_frame = renderer.get_current_frame();
@@ -1881,7 +1919,12 @@ impl MediaRuntime {
     fn next_frame_bytes(&mut self) -> Option<&[u8]> {
         match self {
             MediaRuntime::Static { frame } => Some(frame.as_slice()),
-            MediaRuntime::Video { player, frames, sent_frame_index, .. } => {
+            MediaRuntime::Video {
+                player,
+                frames,
+                sent_frame_index,
+                ..
+            } => {
                 let rendered_frame_index = player.get_frame_index();
                 if rendered_frame_index <= *sent_frame_index || frames.is_empty() {
                     return None;
@@ -1901,7 +1944,7 @@ impl MediaRuntime {
                     return None;
                 }
                 *cached_frame = renderer.get_current_frame();
-                *sent_frame_index=rendered_frame_index;
+                *sent_frame_index = rendered_frame_index;
                 Some(cached_frame.as_slice())
             }
             MediaRuntime::Doublegauge {
@@ -1911,11 +1954,11 @@ impl MediaRuntime {
                 ..
             } => {
                 let rendered_frame_index = renderer.get_frame_index();
-                if rendered_frame_index<=*sent_frame_index {
+                if rendered_frame_index <= *sent_frame_index {
                     return None;
                 }
                 *cached_frame = renderer.get_current_frame();
-                *sent_frame_index=rendered_frame_index;
+                *sent_frame_index = rendered_frame_index;
                 Some(cached_frame.as_slice())
             }
             MediaRuntime::Cooler {
@@ -1925,7 +1968,7 @@ impl MediaRuntime {
                 ..
             } => {
                 let rendered_frame_index = renderer.get_frame_index();
-                if rendered_frame_index<=*sent_frame_index {
+                if rendered_frame_index <= *sent_frame_index {
                     return None;
                 }
                 *cached_frame = renderer.get_current_frame();

@@ -147,8 +147,7 @@ impl TlFanController {
             let rpm = u16::from_be_bytes([data[offset + 1], data[offset + 2]]);
 
             if is_detected {
-                port_fan_counts[port as usize] =
-                    port_fan_counts[port as usize].max(fan_index + 1);
+                port_fan_counts[port as usize] = port_fan_counts[port as usize].max(fan_index + 1);
             }
 
             fans.push(TlFanInfo {
@@ -194,7 +193,10 @@ impl TlFanController {
             }
             self.send_command_quiet(CMD_SET_FAN_GROUP, &bot)?;
 
-            debug!("Set fan groups {base_group}/{} for port {port}: {fan_count} fans", base_group + 1);
+            debug!(
+                "Set fan groups {base_group}/{} for port {port}: {fan_count} fans",
+                base_group + 1
+            );
         }
         Ok(())
     }
@@ -262,9 +264,7 @@ impl TlFanController {
         }
         let data = ((sync as u8) << 7) | (port << 4) | (fan_index & 0x0F);
         self.send_command_quiet(CMD_SET_MB_RPM_SYNC, &[data])?;
-        debug!(
-            "Set MB RPM sync port={port} fan={fan_index} sync={sync}"
-        );
+        debug!("Set MB RPM sync port={port} fan={fan_index} sync={sync}");
         Ok(())
     }
 
@@ -309,10 +309,7 @@ impl TlFanController {
     /// [19] = color count
     /// ```
     pub fn set_group_light(&self, group: u8, effect: &RgbEffect) -> Result<()> {
-        let mode_byte = effect
-            .mode
-            .to_tl_mode_byte()
-            .unwrap_or(3); // Default to Static(3)
+        let mode_byte = effect.mode.to_tl_mode_byte().unwrap_or(3); // Default to Static(3)
 
         let mut payload = [0u8; 20];
         payload[0] = 0x00;
@@ -325,7 +322,7 @@ impl TlFanController {
         let color_count = effect.colors.len().min(4);
         for (i, color) in effect.colors.iter().take(4).enumerate() {
             let offset = 5 + i * 3;
-            payload[offset] = color[0];     // R
+            payload[offset] = color[0]; // R
             payload[offset + 1] = color[1]; // G
             payload[offset + 2] = color[2]; // B
         }
@@ -358,15 +355,18 @@ impl TlFanController {
     /// [18] = disable flag
     /// [19] = color count
     /// ```
-    pub fn set_fan_light(&self, port: u8, fan_index: u8, effect: &RgbEffect, sync: bool) -> Result<()> {
+    pub fn set_fan_light(
+        &self,
+        port: u8,
+        fan_index: u8,
+        effect: &RgbEffect,
+        sync: bool,
+    ) -> Result<()> {
         if port >= 4 {
             bail!("Port {port} out of range (0-3)");
         }
 
-        let mode_byte = effect
-            .mode
-            .to_tl_mode_byte()
-            .unwrap_or(3);
+        let mode_byte = effect.mode.to_tl_mode_byte().unwrap_or(3);
 
         let mut payload = [0u8; 20];
         payload[0] = (port << 4) | (sync as u8);
@@ -388,16 +388,20 @@ impl TlFanController {
         payload[19] = color_count as u8;
 
         self.send_command_quiet(CMD_SET_FAN_LIGHT, &payload)?;
-        debug!(
-            "Set port {port} fan {fan_index} light: mode={mode_byte} sync={sync}"
-        );
+        debug!("Set port {port} fan {fan_index} light: mode={mode_byte} sync={sync}");
         Ok(())
     }
 
     /// Set fan direction flags for a specific fan.
     ///
     /// Data: `[(port<<4)|fanIndex, (swapTopBot<<1)|swapLR]`
-    pub fn set_fan_direction(&self, port: u8, fan_index: u8, swap_lr: bool, swap_tb: bool) -> Result<()> {
+    pub fn set_fan_direction(
+        &self,
+        port: u8,
+        fan_index: u8,
+        swap_lr: bool,
+        swap_tb: bool,
+    ) -> Result<()> {
         let addr = (port << 4) | (fan_index & 0x0F);
         let flags = ((swap_tb as u8) << 1) | (swap_lr as u8);
         self.send_command_quiet(CMD_SET_FAN_DIRECTION, &[addr, flags])?;
@@ -453,8 +457,7 @@ impl TlFanController {
 
         Self::drain_read_buffer(&dev);
 
-        dev.write(&pkt)
-            .context("TL Fan: write command")?;
+        dev.write(&pkt).context("TL Fan: write command")?;
 
         let mut buf = [0u8; PACKET_SIZE];
         // Read up to a few times to skip stale responses
@@ -621,7 +624,11 @@ impl RgbDevice for TlFanPortDevice {
 
     fn set_zone_effect(&self, zone: u8, effect: &RgbEffect) -> Result<()> {
         if zone >= self.fan_count {
-            bail!("Zone {zone} out of range (port {} has {} fans)", self.port, self.fan_count);
+            bail!(
+                "Zone {zone} out of range (port {} has {} fans)",
+                self.port,
+                self.fan_count
+            );
         }
 
         let base_group = (self.port as u16 * 4 * 2) as u8;
@@ -629,8 +636,15 @@ impl RgbDevice for TlFanPortDevice {
 
         // Per-fan light (0xA3) has no side bits — only usable with scope=All.
         // Scoped modes always use group light (0xB0) which targets the correct side group.
-        if !scoped && matches!(effect.mode, RgbMode::Static | RgbMode::Direct | RgbMode::Off) {
-            return self.controller.set_fan_light(self.port, zone, effect, false);
+        if !scoped
+            && matches!(
+                effect.mode,
+                RgbMode::Static | RgbMode::Direct | RgbMode::Off
+            )
+        {
+            return self
+                .controller
+                .set_fan_light(self.port, zone, effect, false);
         }
 
         match effect.scope {
@@ -653,9 +667,14 @@ impl RgbDevice for TlFanPortDevice {
 
     fn set_fan_direction(&self, zone: u8, swap_lr: bool, swap_tb: bool) -> Result<()> {
         if zone >= self.fan_count {
-            bail!("Zone {zone} out of range (port {} has {} fans)", self.port, self.fan_count);
+            bail!(
+                "Zone {zone} out of range (port {} has {} fans)",
+                self.port,
+                self.fan_count
+            );
         }
-        self.controller.set_fan_direction(self.port, zone, swap_lr, swap_tb)
+        self.controller
+            .set_fan_direction(self.port, zone, swap_lr, swap_tb)
     }
 
     fn supports_mb_rgb_sync(&self) -> bool {
@@ -675,7 +694,8 @@ impl RgbDevice for TlFanPortDevice {
         let dummy_effect = RgbEffect::default();
         for (port, &fan_count) in port_fan_counts.iter().enumerate() {
             for fan in 0..fan_count {
-                self.controller.set_fan_light(port as u8, fan, &dummy_effect, enabled)?;
+                self.controller
+                    .set_fan_light(port as u8, fan, &dummy_effect, enabled)?;
             }
         }
         debug!("Set MB RGB sync (all ports): enabled={enabled}");

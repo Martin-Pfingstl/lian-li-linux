@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::collections::HashMap;
 
 use crate::systeminfo::SysSensor;
 
@@ -65,7 +65,6 @@ impl std::fmt::Display for Unit {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorInfo {
     pub source: SensorSource,
@@ -78,14 +77,12 @@ pub struct SensorInfo {
 
 impl SensorInfo {
     pub fn get_display_name(&self) -> String {
-        self.display_name
-            .clone()
-            .unwrap_or_else(|| {
-                self.sensor_name
-                    .as_ref()
-                    .map(|s| format!("{}: {} in {}", s.device_name, s.sensor_name, self.unit))
-                    .unwrap_or_else(|| "Unknown Sensor".to_string())
-            })
+        self.display_name.clone().unwrap_or_else(|| {
+            self.sensor_name
+                .as_ref()
+                .map(|s| format!("{}: {} in {}", s.device_name, s.sensor_name, self.unit))
+                .unwrap_or_else(|| "Unknown Sensor".to_string())
+        })
     }
 }
 
@@ -102,13 +99,16 @@ pub enum ResolvedSensor {
     NvidiaGpu(u32),
     ShellCommand(String),
     RuntimeFile(PathBuf),
-    Virtual { source: SensorSource, divider: usize },
+    Virtual {
+        source: SensorSource,
+        divider: usize,
+    },
     Constant(f32),
 }
 
 pub fn enumerate_sensors() -> Vec<SensorInfo> {
     let mut sensors = Vec::new();
-    
+
     let mut mem_idx: usize = 0;
     let mut gfx_idx: usize = 0;
     let gpu_names = get_amd_gpu_names();
@@ -146,13 +146,12 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
         current_value: Some(0.0),
     });
 
-
     // Scan hwmon devices
     let hwmon_path = "/sys/class/hwmon/";
     if let Ok(entries) = std::fs::read_dir(hwmon_path) {
         let mut sorted_entries: Vec<_> = entries.flatten().collect();
         // Sort, so that hwmon<x> is numerically correct sorted (especially hwmon10 after hwmon9)
-        
+
         sorted_entries.sort_by_cached_key(|entry| {
             entry
                 .file_name()
@@ -179,7 +178,6 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
                 None => continue,
             };
 
-
             let device_path = std::fs::read_link(path.join("device"))
                 .ok()
                 .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()));
@@ -190,7 +188,6 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
                 for file in files.flatten() {
                     let fname = file.file_name().to_string_lossy().to_string();
                     if fname.ends_with("_input") {
-
                         // Extract prefix (filename might be freq1_input). Prefix contains useful hints for what kind of value it is (Frequency, Voltage, Power, °C etc)
                         let prefix = fname.strip_suffix("_input").unwrap();
                         let label = std::fs::read_to_string(path.join(format!("{}_label", prefix)))
@@ -199,9 +196,13 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
                         let display_label = get_label_name(prefix, &label);
                         let (unit, divider) = get_unit(prefix);
                         let value = read_sysfs_file(&file.path()).map(|v| v / divider as f32);
-                        let sensor_name = Some(SensorName { device_name: display_name.clone(), sensor_name: display_label });
+                        let sensor_name = Some(SensorName {
+                            device_name: display_name.clone(),
+                            sensor_name: display_label,
+                        });
                         let device_path = if let Some(dev) = &device_path {
-                            if dev.starts_with("DEADBEEF") { // virtual devices (for example my motherboard from Gigabyte links to "DEADBEEF-2001-0000-00A0-C90629100000")
+                            if dev.starts_with("DEADBEEF") {
+                                // virtual devices (for example my motherboard from Gigabyte links to "DEADBEEF-2001-0000-00A0-C90629100000")
                                 pci_id.to_string()
                             } else {
                                 dev.to_string()
@@ -227,14 +228,16 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
 
                 device_sensors.sort_by_cached_key(|s| s.get_display_name());
                 sensors.extend(device_sensors);
-
             }
         }
     }
 
     // Check for NVIDIA GPU
     if let Ok(output) = Command::new("nvidia-smi")
-        .args(["--query-gpu=index,name,temperature.gpu", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=index,name,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ])
         .output()
     {
         if output.status.success() {
@@ -260,7 +263,6 @@ pub fn enumerate_sensors() -> Vec<SensorInfo> {
     }
     sensors
 }
-
 
 pub fn get_pci_id_from_path(hwmon_path: PathBuf) -> String {
     // 1. Resolve that 'device'-link in the hwmon-folder
@@ -360,7 +362,6 @@ pub fn get_label_name(prefix: &str, label: &str) -> String {
     new_label
 }
 
-
 fn get_amd_gpu_names() -> HashMap<String, String> {
     let mut gpus = HashMap::new();
 
@@ -392,7 +393,6 @@ fn get_amd_gpu_names() -> HashMap<String, String> {
 
     clean_common_prefixes(gpus)
 }
-
 
 // Helper method: Looks at all the values in the hash map. If all of them share a single prefix, then remove the prefix
 // For example, if all values contain the prefix "VGA compatible controller: <blah blah>", then the prefix "VGA compatible controller: " will be removed
@@ -469,13 +469,25 @@ pub fn get_display_name(
             return (Some("Motherboard".to_string()), mem_idx, gfx_idx);
         }
         if name.starts_with("spd") {
-            return (Some(format!("DDR5 RAM Module {}", mem_idx + 1)), mem_idx + 1, gfx_idx);
+            return (
+                Some(format!("DDR5 RAM Module {}", mem_idx + 1)),
+                mem_idx + 1,
+                gfx_idx,
+            );
         }
         if name.starts_with("ee1004") {
-            return (Some(format!("DDR4 RAM Module {}", mem_idx + 1)), mem_idx + 1, gfx_idx);
+            return (
+                Some(format!("DDR4 RAM Module {}", mem_idx + 1)),
+                mem_idx + 1,
+                gfx_idx,
+            );
         }
         if name.starts_with("jc42") {
-            return (Some(format!("DDR3/ECC RAM Module {}", mem_idx + 1)), mem_idx + 1, gfx_idx);
+            return (
+                Some(format!("DDR3/ECC RAM Module {}", mem_idx + 1)),
+                mem_idx + 1,
+                gfx_idx,
+            );
         }
         if name == "acpitz" {
             return (None, mem_idx, gfx_idx);
@@ -489,10 +501,13 @@ pub fn get_display_name(
 
 pub fn resolve_sensor(source: &SensorSource, divider: usize) -> Option<ResolvedSensor> {
     match source {
-        SensorSource::CpuUsage | SensorSource::MemUsage
-        | SensorSource::MemUsed | SensorSource::MemFree => {
-            Some(ResolvedSensor::Virtual { source: source.clone(), divider })
-        }
+        SensorSource::CpuUsage
+        | SensorSource::MemUsage
+        | SensorSource::MemUsed
+        | SensorSource::MemFree => Some(ResolvedSensor::Virtual {
+            source: source.clone(),
+            divider,
+        }),
         SensorSource::Hwmon {
             name,
             label,
@@ -538,15 +553,22 @@ pub fn resolve_sensor(source: &SensorSource, divider: usize) -> Option<ResolvedS
                         if fname.ends_with("_input") {
                             let prefix = fname.strip_suffix("_input").unwrap();
                             if prefix == label {
-                                return Some(ResolvedSensor::SysfsFile { path: file.path(), divider });
+                                return Some(ResolvedSensor::SysfsFile {
+                                    path: file.path(),
+                                    divider,
+                                });
                             }
                             // Old config format: label is human-readable (e.g. "Package id 0")
-                            let file_label = std::fs::read_to_string(path.join(format!("{prefix}_label")))
-                                .map(|l| l.trim().to_string())
-                                .unwrap_or_default();
+                            let file_label =
+                                std::fs::read_to_string(path.join(format!("{prefix}_label")))
+                                    .map(|l| l.trim().to_string())
+                                    .unwrap_or_default();
                             if file_label == *label {
                                 let actual_divider = get_unit(prefix).1;
-                                return Some(ResolvedSensor::SysfsFile { path: file.path(), divider: actual_divider });
+                                return Some(ResolvedSensor::SysfsFile {
+                                    path: file.path(),
+                                    divider: actual_divider,
+                                });
                             }
                         }
                     }
@@ -578,31 +600,27 @@ pub fn read_sensor_value(resolved: &ResolvedSensor) -> anyhow::Result<f32> {
                 .map_err(|e| anyhow::anyhow!("parsing {}: {e}", path.display()))?;
             Ok(raw_value / (*divider as f32))
         }
-        ResolvedSensor::Virtual { source, divider } => {
-            match source {
-                SensorSource::CpuUsage => {
-                    Ok(SysSensor::get_cpu_usage() as f32 / *divider as f32)
-                }
-                SensorSource::MemUsage => {
-                    let content = std::fs::read_to_string("/proc/meminfo")
-                        .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
-                    Ok(get_mem_usage(&content))
-                }
-                SensorSource::MemUsed => {
-                    let content = std::fs::read_to_string("/proc/meminfo")
-                        .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
-                    let total = extract_mem_value(&content, "MemTotal:").unwrap_or(0.0);
-                    let avail = extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0);
-                    Ok((total - avail) / *divider as f32)
-                }
-                SensorSource::MemFree => {
-                    let content = std::fs::read_to_string("/proc/meminfo")
-                        .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
-                    Ok(extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0) / *divider as f32)
-                }
-                _ => anyhow::bail!("unexpected virtual sensor source"),
+        ResolvedSensor::Virtual { source, divider } => match source {
+            SensorSource::CpuUsage => Ok(SysSensor::get_cpu_usage() as f32 / *divider as f32),
+            SensorSource::MemUsage => {
+                let content = std::fs::read_to_string("/proc/meminfo")
+                    .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
+                Ok(get_mem_usage(&content))
             }
-        }
+            SensorSource::MemUsed => {
+                let content = std::fs::read_to_string("/proc/meminfo")
+                    .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
+                let total = extract_mem_value(&content, "MemTotal:").unwrap_or(0.0);
+                let avail = extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0);
+                Ok((total - avail) / *divider as f32)
+            }
+            SensorSource::MemFree => {
+                let content = std::fs::read_to_string("/proc/meminfo")
+                    .map_err(|e| anyhow::anyhow!("reading /proc/meminfo: {e}"))?;
+                Ok(extract_mem_value(&content, "MemAvailable:").unwrap_or(0.0) / *divider as f32)
+            }
+            _ => anyhow::bail!("unexpected virtual sensor source"),
+        },
         ResolvedSensor::NvidiaGpu(index) => {
             let output = Command::new("nvidia-smi")
                 .args([
@@ -660,8 +678,7 @@ pub fn read_sensor_value(resolved: &ResolvedSensor) -> anyhow::Result<f32> {
 
 /// Runtime path for a wireless coolant temperature file.
 pub fn coolant_runtime_path(device_id: &str) -> PathBuf {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-        .unwrap_or_else(|_| "/tmp".to_string());
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
     let sanitized = device_id.replace(':', "-");
     PathBuf::from(format!("{runtime_dir}/lianli-coolant-{sanitized}"))
 }

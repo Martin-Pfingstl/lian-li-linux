@@ -370,9 +370,7 @@ impl DeviceFamily {
     pub fn is_desktop_mode(self) -> bool {
         matches!(
             self,
-            Self::HydroShift2LcdDesktop
-                | Self::Lancool207Desktop
-                | Self::UniversalScreenDesktop
+            Self::HydroShift2LcdDesktop | Self::Lancool207Desktop | Self::UniversalScreenDesktop
         )
     }
 
@@ -381,9 +379,7 @@ impl DeviceFamily {
     pub fn supports_display_mode_switch(self) -> bool {
         matches!(
             self,
-            Self::HydroShift2Lcd
-                | Self::Lancool207
-                | Self::UniversalScreen
+            Self::HydroShift2Lcd | Self::Lancool207 | Self::UniversalScreen
         ) || self.is_desktop_mode()
     }
 }

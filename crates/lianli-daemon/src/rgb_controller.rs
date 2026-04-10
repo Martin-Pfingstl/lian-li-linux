@@ -151,7 +151,10 @@ impl RgbController {
         // Try wired first
         if let Some(dev) = self.wired.get(device_id) {
             dev.set_zone_effect(zone, effect)?;
-            debug!("Set RGB effect on {device_id} zone {zone}: {:?}", effect.mode);
+            debug!(
+                "Set RGB effect on {device_id} zone {zone}: {:?}",
+                effect.mode
+            );
             return Ok(());
         }
 
@@ -323,17 +326,16 @@ impl RgbController {
     }
 
     /// Enable or disable motherboard ARGB sync for a device.
-    pub fn set_mb_rgb_sync(
-        &self,
-        device_id: &str,
-        enabled: bool,
-    ) -> anyhow::Result<()> {
+    pub fn set_mb_rgb_sync(&self, device_id: &str, enabled: bool) -> anyhow::Result<()> {
         if let Some(dev) = self.wired.get(device_id) {
             if !dev.supports_mb_rgb_sync() {
                 anyhow::bail!("Device {device_id} does not support MB RGB sync");
             }
             dev.set_mb_rgb_sync(enabled)?;
-            info!("MB RGB sync {}: {device_id}", if enabled { "enabled" } else { "disabled" });
+            info!(
+                "MB RGB sync {}: {device_id}",
+                if enabled { "enabled" } else { "disabled" }
+            );
             return Ok(());
         }
         anyhow::bail!("RGB device not found: {device_id}");
@@ -352,7 +354,9 @@ impl RgbController {
                 anyhow::bail!("Device {device_id} does not support fan direction");
             }
             dev.set_fan_direction(zone, swap_lr, swap_tb)?;
-            debug!("Set fan direction on {device_id} zone {zone}: swap_lr={swap_lr} swap_tb={swap_tb}");
+            debug!(
+                "Set fan direction on {device_id} zone {zone}: swap_lr={swap_lr} swap_tb={swap_tb}"
+            );
             return Ok(());
         }
         anyhow::bail!("RGB device not found: {device_id}");
@@ -452,7 +456,10 @@ impl DirectColorBuffer {
 
     /// Store colors for a device zone (overwrites any previous pending value).
     pub fn set(&mut self, device_id: String, zone: u8, colors: Vec<[u8; 3]>) {
-        self.pending.entry(device_id).or_default().insert(zone, colors);
+        self.pending
+            .entry(device_id)
+            .or_default()
+            .insert(zone, colors);
     }
 
     /// Take all pending updates, clearing the buffer.

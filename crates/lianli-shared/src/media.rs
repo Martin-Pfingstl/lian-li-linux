@@ -16,8 +16,12 @@ pub enum MediaType {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum SensorSourceConfig {
-    Constant { value: f32 },
-    Command { cmd: String },
+    Constant {
+        value: f32,
+    },
+    Command {
+        cmd: String,
+    },
     Hwmon {
         name: String,
         label: String,

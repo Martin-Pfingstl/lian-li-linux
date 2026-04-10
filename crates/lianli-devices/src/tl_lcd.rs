@@ -195,7 +195,12 @@ impl TlLcdDevice {
             let remaining = total_size - offset;
             let chunk_len = remaining.min(MAX_PAYLOAD_PER_PACKET);
 
-            let pkt = build_packet(cmd, total_size as u32, packet_num, &data[offset..offset + chunk_len]);
+            let pkt = build_packet(
+                cmd,
+                total_size as u32,
+                packet_num,
+                &data[offset..offset + chunk_len],
+            );
             dev.write(&pkt).context("TLLCD: write packet")?;
 
             offset += chunk_len;
@@ -304,7 +309,12 @@ impl LcdDevice for TlLcdDevice {
 }
 
 /// Build a 512-byte TLLCD HID packet.
-fn build_packet(cmd: u8, total_data_size: u32, packet_num: u32, payload: &[u8]) -> [u8; PACKET_SIZE] {
+fn build_packet(
+    cmd: u8,
+    total_data_size: u32,
+    packet_num: u32,
+    payload: &[u8],
+) -> [u8; PACKET_SIZE] {
     let mut pkt = [0u8; PACKET_SIZE];
 
     pkt[0] = REPORT_ID;

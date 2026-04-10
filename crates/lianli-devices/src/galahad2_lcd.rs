@@ -6,6 +6,6 @@
 //! same pump/fan/LCD/temp commands. This module re-exports the shared driver.
 
 pub use crate::hydroshift_lcd::{
-    AioHandshake, AioLcdVariant, HydroShiftLcdController as Galahad2LcdController,
-    LcdControlMode, ScreenRotation,
+    AioHandshake, AioLcdVariant, HydroShiftLcdController as Galahad2LcdController, LcdControlMode,
+    ScreenRotation,
 };

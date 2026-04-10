@@ -49,8 +49,6 @@ pub fn switch_to_lcd_mode(api: &HidApi, pid: u16) -> Result<()> {
         .write(payload)
         .context("sending LCD mode switch bytes")?;
 
-    info!(
-        "Sent LCD mode switch to {SWITCHER_VID:#06x}:{pid:#06x} — device will reboot"
-    );
+    info!("Sent LCD mode switch to {SWITCHER_VID:#06x}:{pid:#06x} — device will reboot");
     Ok(())
 }

@@ -41,10 +41,7 @@ fn family_display_name(f: DeviceFamily) -> &'static str {
     }
 }
 
-pub fn device_to_slint(
-    device: &DeviceInfo,
-    telemetry: &TelemetrySnapshot,
-) -> super::DeviceData {
+pub fn device_to_slint(device: &DeviceInfo, telemetry: &TelemetrySnapshot) -> super::DeviceData {
     let fan_rpms = telemetry
         .fan_rpms
         .get(&device.device_id)
@@ -82,7 +79,8 @@ pub fn device_to_slint(
         coolant_temp: SharedString::from(&coolant_temp),
         resolution: SharedString::from(&resolution),
         in_desktop_mode: device.family.is_desktop_mode(),
-        in_lcd_mode: device.family.supports_display_mode_switch() && !device.family.is_desktop_mode(),
+        in_lcd_mode: device.family.supports_display_mode_switch()
+            && !device.family.is_desktop_mode(),
         is_unbound_wireless: device.is_unbound_wireless,
     }
 }
@@ -93,11 +91,13 @@ pub fn devices_to_model(
 ) -> ModelRc<super::DeviceData> {
     let items: Vec<super::DeviceData> = devices
         .iter()
-        .filter(|d| !matches!(
-            d.family,
-            lianli_shared::device_id::DeviceFamily::WirelessTx
-            | lianli_shared::device_id::DeviceFamily::WirelessRx
-        ))
+        .filter(|d| {
+            !matches!(
+                d.family,
+                lianli_shared::device_id::DeviceFamily::WirelessTx
+                    | lianli_shared::device_id::DeviceFamily::WirelessRx
+            )
+        })
         .map(|d| device_to_slint(d, telemetry))
         .collect();
     ModelRc::new(VecModel::from(items))
@@ -169,20 +169,24 @@ pub fn lcd_to_slint(
         };
     }
 
-
     let text_color = sensor.map(|s| s.text_color).unwrap_or([255, 255, 255]);
     let bg_color = sensor.map(|s| s.background_color).unwrap_or([0, 0, 0]);
-    let gauge_bg = sensor.map(|s| s.gauge_background_color).unwrap_or([40, 40, 40]);
+    let gauge_bg = sensor
+        .map(|s| s.gauge_background_color)
+        .unwrap_or([40, 40, 40]);
 
     let gauge_ranges: Vec<super::GaugeRangeData> = sensor
-        .map(|s| s.gauge_ranges.iter().map(|r| {
-            super::GaugeRangeData {
-                max_value: r.max.unwrap_or(100.0) as i32,
-                r: r.color[0] as i32,
-                g: r.color[1] as i32,
-                b: r.color[2] as i32,
-            }
-        }).collect())
+        .map(|s| {
+            s.gauge_ranges
+                .iter()
+                .map(|r| super::GaugeRangeData {
+                    max_value: r.max.unwrap_or(100.0) as i32,
+                    r: r.color[0] as i32,
+                    g: r.color[1] as i32,
+                    b: r.color[2] as i32,
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
     let [r, g, b] = lcd.rgb.unwrap_or([0, 0, 0]);
@@ -193,7 +197,12 @@ pub fn lcd_to_slint(
         serial: SharedString::from(serial_str),
         device_label: SharedString::from(&device_label),
         media_type: SharedString::from(media_type_to_string(&lcd.media_type)),
-        path: SharedString::from(lcd.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
+        path: SharedString::from(
+            lcd.path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        ),
         fps: lcd.fps.map(|f| f as i32).unwrap_or(30),
         orientation: lcd.orientation as i32,
         rgb_r: r as i32,
@@ -203,7 +212,12 @@ pub fn lcd_to_slint(
         sensor_unit: SharedString::from(sensor.map(|s| s.unit.as_str()).unwrap_or("")),
         sg_sensor_index: sg_sensor_index as i32,
         sensor_command: SharedString::from(&cmd),
-        sensor_font_path: SharedString::from(sensor.and_then(|s| s.font_path.as_ref()).map(|p| p.display().to_string()).unwrap_or_default()),
+        sensor_font_path: SharedString::from(
+            sensor
+                .and_then(|s| s.font_path.as_ref())
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        ),
         sensor_decimal_places: sensor.map(|s| s.decimal_places as i32).unwrap_or(0),
         sensor_update_interval: sensor.map(|s| s.update_interval_ms as i32).unwrap_or(1000),
         sensor_value_font_size: sensor.map(|s| s.value_font_size as i32).unwrap_or(120),
@@ -235,8 +249,12 @@ pub fn lcd_to_slint(
         gauge_1_max: doublegauge.map(|dg| dg.gauge_1_max as i32).unwrap_or(100),
         value_1_min: doublegauge.map(|dg| dg.value_1_min as i32).unwrap_or(0),
         value_1_max: doublegauge.map(|dg| dg.value_1_max as i32).unwrap_or(100),
-        display_value_1_min: doublegauge.map(|dg| dg.display_value_1_min as i32).unwrap_or(0),
-        display_value_1_max: doublegauge.map(|dg| dg.display_value_1_max as i32).unwrap_or(100),
+        display_value_1_min: doublegauge
+            .map(|dg| dg.display_value_1_min as i32)
+            .unwrap_or(0),
+        display_value_1_max: doublegauge
+            .map(|dg| dg.display_value_1_max as i32)
+            .unwrap_or(100),
         clamp_1: doublegauge.map(|dg| dg.clamp_1 as bool).unwrap_or(true),
         unit_1: SharedString::from(doublegauge.map(|dg| dg.unit_1.as_str()).unwrap_or("N/A")),
         label_1: SharedString::from(doublegauge.map(|dg| dg.label_1.as_str()).unwrap_or("N/A")),
@@ -248,8 +266,12 @@ pub fn lcd_to_slint(
         gauge_2_max: doublegauge.map(|dg| dg.gauge_2_max as i32).unwrap_or(100),
         value_2_min: doublegauge.map(|dg| dg.value_2_min as i32).unwrap_or(0),
         value_2_max: doublegauge.map(|dg| dg.value_2_max as i32).unwrap_or(100),
-        display_value_2_min: doublegauge.map(|dg| dg.display_value_2_min as i32).unwrap_or(0),
-        display_value_2_max: doublegauge.map(|dg| dg.display_value_2_max as i32).unwrap_or(100),
+        display_value_2_min: doublegauge
+            .map(|dg| dg.display_value_2_min as i32)
+            .unwrap_or(0),
+        display_value_2_max: doublegauge
+            .map(|dg| dg.display_value_2_max as i32)
+            .unwrap_or(100),
         clamp_2: doublegauge.map(|dg| dg.clamp_2 as bool).unwrap_or(true),
         unit_2: SharedString::from(doublegauge.map(|dg| dg.unit_2.as_str()).unwrap_or("N/A")),
         label_2: SharedString::from(doublegauge.map(|dg| dg.label_2.as_str()).unwrap_or("N/A")),
@@ -262,7 +284,10 @@ pub fn lcd_entries_to_model(
     devices: &[DeviceInfo],
     sensors: &[lianli_shared::sensors::SensorInfo],
 ) -> ModelRc<super::LcdEntryData> {
-    let items: Vec<_> = lcds.iter().map(|l| lcd_to_slint(l, devices, sensors)).collect();
+    let items: Vec<_> = lcds
+        .iter()
+        .map(|l| lcd_to_slint(l, devices, sensors))
+        .collect();
     ModelRc::new(VecModel::from(items))
 }
 
@@ -370,18 +395,16 @@ pub fn fan_curve_to_slint(
     if let Some(sd) = sensor {
         // Find sd in sensors: Return its index
         if let Some(idx) = sensors
-                .iter()
-                .filter(|s| s.unit == Unit::C)
-                .position(|si| si.source == *sd) {
+            .iter()
+            .filter(|s| s.unit == Unit::C)
+            .position(|si| si.source == *sd)
+        {
             sensor_index = idx;
         } else {
-            sensor_index = sensors
-                            .iter()
-                            .filter(|s| s.unit == Unit::C)
-                            .count();
+            sensor_index = sensors.iter().filter(|s| s.unit == Unit::C).count();
         }
     }
-    
+
     super::FanCurveData {
         name: SharedString::from(&curve.name),
         temp_source_index: sensor_index as i32,
@@ -396,7 +419,10 @@ pub fn fan_curves_to_model(
     curves: &[FanCurve],
     sensors: &[lianli_shared::sensors::SensorInfo],
 ) -> ModelRc<super::FanCurveData> {
-    let items: Vec<_> = curves.iter().map(|c| fan_curve_to_slint(c, sensors)).collect();
+    let items: Vec<_> = curves
+        .iter()
+        .map(|c| fan_curve_to_slint(c, sensors))
+        .collect();
     ModelRc::new(VecModel::from(items))
 }
 
@@ -479,7 +505,10 @@ pub fn fan_groups_to_model(
     let items: Vec<super::FanGroupData> = fan_devices
         .iter()
         .map(|dev| {
-            let group = fan_config.speeds.iter().find(|g| g.device_id.as_deref() == Some(&dev.device_id));
+            let group = fan_config
+                .speeds
+                .iter()
+                .find(|g| g.device_id.as_deref() == Some(&dev.device_id));
             let speeds = group.map(|g| &g.speeds[..]).unwrap_or(&DEFAULT_SPEEDS);
 
             let device_name = if dev.name.is_empty() {
@@ -525,22 +554,29 @@ pub fn rgb_devices_to_model(
     let items: Vec<super::RgbDeviceData> = capabilities
         .iter()
         .map(|cap| {
-            let dev_cfg = device_configs
-                .and_then(|devs| devs.iter().find(|d| d.device_id == cap.device_id));
+            let dev_cfg =
+                device_configs.and_then(|devs| devs.iter().find(|d| d.device_id == cap.device_id));
 
             let mb_rgb_sync = dev_cfg.map(|d| d.mb_rgb_sync).unwrap_or(false);
 
             // Determine if device has group zones (scoped: Top/Bottom or Inner/Outer)
             let has_group_zones = cap.supported_scopes.iter().any(|scopes| {
-                scopes.iter().any(|s| matches!(s, RgbScope::Top | RgbScope::Bottom | RgbScope::Inner | RgbScope::Outer))
+                scopes.iter().any(|s| {
+                    matches!(
+                        s,
+                        RgbScope::Top | RgbScope::Bottom | RgbScope::Inner | RgbScope::Outer
+                    )
+                })
             });
 
             // Check zone 0 config to determine synced state
             let z0_cfg = dev_cfg.and_then(|d| d.zones.iter().find(|z| z.zone_index == 0));
             let synced = if has_group_zones {
                 if let Some(zcfg) = z0_cfg {
-                    let is_per_fan = matches!(zcfg.effect.mode, RgbMode::Off | RgbMode::Static | RgbMode::Direct)
-                        && matches!(zcfg.effect.scope, RgbScope::All);
+                    let is_per_fan = matches!(
+                        zcfg.effect.mode,
+                        RgbMode::Off | RgbMode::Static | RgbMode::Direct
+                    ) && matches!(zcfg.effect.scope, RgbScope::All);
                     !is_per_fan
                 } else {
                     false
@@ -554,16 +590,20 @@ pub fn rgb_devices_to_model(
                 .iter()
                 .enumerate()
                 .map(|(zidx, zone_info)| {
-                    let zone_cfg = dev_cfg.and_then(|d| {
-                        d.zones.iter().find(|z| z.zone_index == zidx as u8)
-                    });
+                    let zone_cfg =
+                        dev_cfg.and_then(|d| d.zones.iter().find(|z| z.zone_index == zidx as u8));
 
                     let (mode, colors, speed, brightness, direction, scope, swap_lr, swap_tb) =
                         if let Some(zcfg) = zone_cfg {
                             let e = &zcfg.effect;
-                            let colors: Vec<super::RgbColorData> = e.colors
+                            let colors: Vec<super::RgbColorData> = e
+                                .colors
                                 .iter()
-                                .map(|c| super::RgbColorData { r: c[0] as i32, g: c[1] as i32, b: c[2] as i32 })
+                                .map(|c| super::RgbColorData {
+                                    r: c[0] as i32,
+                                    g: c[1] as i32,
+                                    b: c[2] as i32,
+                                })
                                 .collect();
                             (
                                 rgb_mode_to_string(&e.mode),
@@ -579,10 +619,12 @@ pub fn rgb_devices_to_model(
                             (
                                 "Off".to_string(),
                                 vec![super::RgbColorData { r: 255, g: 0, b: 0 }],
-                                2, 3,
+                                2,
+                                3,
                                 "Clockwise".to_string(),
                                 "All".to_string(),
-                                false, false,
+                                false,
+                                false,
                             )
                         };
 

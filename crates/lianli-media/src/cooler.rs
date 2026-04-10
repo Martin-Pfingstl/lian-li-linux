@@ -39,7 +39,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::warn;
 
-
 #[derive(Debug, Default)]
 pub struct CpuData {
     pub previous_left_text: Option<String>,
@@ -53,9 +52,9 @@ pub struct CpuData {
 
 #[derive(Debug)]
 pub struct CoolerAsset {
-    unit1: String,  // Normally %
-    unit2: String,  // normally °C
-    
+    unit1: String, // Normally %
+    unit2: String, // normally °C
+
     pub gauge_1_min: i32,
     pub gauge_1_max: i32,
     pub value_1_min: i32,
@@ -177,7 +176,7 @@ impl CoolerAsset {
         // Now draw the labels
         let (tw, _, _, _, _) = get_exact_text_metrics(&font_label, label1, scale);
 
-        let box_x = 170.0 * x_scale - tw as f32/2.0;
+        let box_x = 170.0 * x_scale - tw as f32 / 2.0;
         let box_y = 220.0 * y_scale;
 
         let rgb_lightgrey = ::image::Rgba([230, 238, 246, 255]);
@@ -193,7 +192,7 @@ impl CoolerAsset {
 
         let (tw, _, _, _, _) = get_exact_text_metrics(&font_label, label2, scale);
 
-        let box_x = 318.0 * x_scale-tw as f32/2.0;
+        let box_x = 318.0 * x_scale - tw as f32 / 2.0;
         let box_y = 155.0 * y_scale;
 
         draw_text_mut(
@@ -309,7 +308,7 @@ impl CoolerAsset {
             display_value_2_max: descriptor.display_value_2_max,
             clamp_2: descriptor.clamp_2,
             decimals_2: descriptor.decimals_2,
-            
+
             sensor_1,
             sensor_2,
             update_interval,
@@ -340,21 +339,12 @@ impl CoolerAsset {
         // Quantize per-core usage to whole percent (SysSensor reports 0..=10000),
         // otherwise the dirty check below would fire on every sub-percent jitter
         // and re-render at full update rate.
-        let usage_per_core_pct: Vec<u32> =
-            usage_per_core.iter().map(|u| u / 100).collect();
+        let usage_per_core_pct: Vec<u32> = usage_per_core.iter().map(|u| u / 100).collect();
 
-        let sensor_left_value = read_with_warn(
-            "cooler",
-            "sensor_1",
-            &self.sensor_1,
-            &self.sensor_1_failed,
-        );
-        let sensor_right_value = read_with_warn(
-            "cooler",
-            "sensor_2",
-            &self.sensor_2,
-            &self.sensor_2_failed,
-        );
+        let sensor_left_value =
+            read_with_warn("cooler", "sensor_1", &self.sensor_1, &self.sensor_1_failed);
+        let sensor_right_value =
+            read_with_warn("cooler", "sensor_2", &self.sensor_2, &self.sensor_2_failed);
 
         let sensor_left_range = normalize_range(
             sensor_left_value,
@@ -522,7 +512,7 @@ impl CoolerAsset {
 
         for (i, &usage) in usage_per_core.iter().enumerate() {
             // 1. limit load (0.0 to 1.0)
-            let core_load = (usage/100).clamp(0, 100);
+            let core_load = (usage / 100).clamp(0, 100);
 
             let clamped_usage = (core_load as f32) / 100.0;
 
@@ -563,7 +553,7 @@ impl CoolerAsset {
         let oriented = apply_orientation(rgb_img, self.orientation);
 
         // 4. Convert to desired format
-        
+
         let mut s = self.screen.clone();
         s.jpeg_quality = 40;
 
@@ -594,7 +584,6 @@ impl CoolerAsset {
         };
         return frame_ret;
     }
-
 }
 
 /// Map `value` from the inclusive range [min, max] to [0, 1], clamping out-of-range

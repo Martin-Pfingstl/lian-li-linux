@@ -76,7 +76,11 @@ impl Ene6k77Model {
 
     /// Max fans per group.
     pub fn max_fans_per_group(&self) -> u8 {
-        if self.is_v2() { 6 } else { 4 }
+        if self.is_v2() {
+            6
+        } else {
+            4
+        }
     }
 }
 
@@ -254,7 +258,10 @@ impl Ene6k77Controller {
 
         // [0xE0, 0x2G, 0x00, DUTY] where G = group index
         self.send_feature(&[REPORT_ID, 0x20 | group, 0x00, duty])?;
-        debug!("Set group {group} speed to duty={duty} ({:.0}%)", duty as f32 / 2.55);
+        debug!(
+            "Set group {group} speed to duty={duty} ({:.0}%)",
+            duty as f32 / 2.55
+        );
         thread::sleep(CMD_DELAY);
         Ok(())
     }
@@ -284,8 +291,8 @@ impl Ene6k77Controller {
         match self.model {
             Ene6k77Model::SlFan | Ene6k77Model::SlRedragon => 16,
             Ene6k77Model::SlV2Fan | Ene6k77Model::SlV2aFan => 16,
-            Ene6k77Model::AlFan => 20,   // 8 inner + 12 outer
-            Ene6k77Model::AlV2Fan => 20,  // 8 inner + 12 outer
+            Ene6k77Model::AlFan => 20,      // 8 inner + 12 outer
+            Ene6k77Model::AlV2Fan => 20,    // 8 inner + 12 outer
             Ene6k77Model::SlInfinity => 20, // 8 inner + 12 outer
         }
     }
@@ -323,7 +330,14 @@ impl Ene6k77Controller {
                 }
             }
         } else {
-            self.send_port_effect(group, effect, mode_byte, speed_byte, dir_byte, brightness_byte)?;
+            self.send_port_effect(
+                group,
+                effect,
+                mode_byte,
+                speed_byte,
+                dir_byte,
+                brightness_byte,
+            )?;
         }
 
         // Commit frame to display changes
@@ -338,7 +352,15 @@ impl Ene6k77Controller {
     }
 
     /// Send color + effect for SL (single-ring) models.
-    fn send_port_effect(&self, port: u8, effect: &RgbEffect, mode: u8, speed: u8, dir: u8, brightness: u8) -> Result<()> {
+    fn send_port_effect(
+        &self,
+        port: u8,
+        effect: &RgbEffect,
+        mode: u8,
+        speed: u8,
+        dir: u8,
+        brightness: u8,
+    ) -> Result<()> {
         let mut color_cmd = vec![REPORT_ID, 0x30 | port];
         for color in effect.colors.iter().take(4) {
             color_cmd.push(color[0]); // R
@@ -369,7 +391,10 @@ impl Ene6k77Controller {
             }
         }
         match self.send_output(&color_cmd) {
-            Ok(()) => debug!("Port {port}: wrote {} color bytes ({leds_per_fan} LEDs/fan)", color_cmd.len()),
+            Ok(()) => debug!(
+                "Port {port}: wrote {} color bytes ({leds_per_fan} LEDs/fan)",
+                color_cmd.len()
+            ),
             Err(e) => warn!("Port {port}: color output report failed: {e}"),
         }
         thread::sleep(CMD_DELAY);
@@ -434,8 +459,7 @@ impl Ene6k77Controller {
 
     fn send_output(&self, data: &[u8]) -> Result<()> {
         let dev = self.device.lock();
-        dev.write(data)
-            .context("ENE 6K77: send output report")?;
+        dev.write(data).context("ENE 6K77: send output report")?;
         Ok(())
     }
 
@@ -447,9 +471,7 @@ impl Ene6k77Controller {
             .get_input_report(&mut buf)
             .context("ENE 6K77: get input report")?;
         if n < expected_len {
-            bail!(
-                "ENE 6K77: expected {expected_len} bytes, got {n}"
-            );
+            bail!("ENE 6K77: expected {expected_len} bytes, got {n}");
         }
         Ok(buf[1..=expected_len].to_vec())
     }
@@ -476,7 +498,9 @@ impl FanDevice for Ene6k77Controller {
     }
 
     fn fan_port_info(&self) -> Vec<(u8, u8)> {
-        (0..4).map(|g| (g, self.fan_quantities[g as usize].max(1))).collect()
+        (0..4)
+            .map(|g| (g, self.fan_quantities[g as usize].max(1)))
+            .collect()
     }
 
     fn per_fan_control(&self) -> bool {
@@ -494,8 +518,10 @@ impl FanDevice for Ene6k77Controller {
         let sub_cmd = match self.model {
             Ene6k77Model::SlFan | Ene6k77Model::SlRedragon => 0x31,
             Ene6k77Model::AlFan => 0x42,
-            Ene6k77Model::SlV2Fan | Ene6k77Model::SlV2aFan
-            | Ene6k77Model::AlV2Fan | Ene6k77Model::SlInfinity => 0x62,
+            Ene6k77Model::SlV2Fan
+            | Ene6k77Model::SlV2aFan
+            | Ene6k77Model::AlV2Fan
+            | Ene6k77Model::SlInfinity => 0x62,
         };
         let data = (1u8 << (group + 4)) | ((sync as u8) << group);
         self.send_feature(&[REPORT_ID, 0x10, sub_cmd, data, 0x00, 0x00])?;
@@ -528,7 +554,11 @@ impl Ene6k77Controller {
 
 impl RgbDevice for Ene6k77GroupDevice {
     fn device_name(&self) -> String {
-        format!("UNI FAN {} Group {}", self.controller.model.name(), self.group)
+        format!(
+            "UNI FAN {} Group {}",
+            self.controller.model.name(),
+            self.group
+        )
     }
 
     fn supported_modes(&self) -> Vec<RgbMode> {
@@ -580,10 +610,13 @@ impl RgbDevice for Ene6k77GroupDevice {
         let sub_cmd = match self.controller.model {
             Ene6k77Model::SlFan | Ene6k77Model::SlRedragon => 0x30,
             Ene6k77Model::AlFan => 0x41,
-            Ene6k77Model::SlV2Fan | Ene6k77Model::SlV2aFan
-            | Ene6k77Model::AlV2Fan | Ene6k77Model::SlInfinity => 0x61,
+            Ene6k77Model::SlV2Fan
+            | Ene6k77Model::SlV2aFan
+            | Ene6k77Model::AlV2Fan
+            | Ene6k77Model::SlInfinity => 0x61,
         };
-        self.controller.send_feature(&[REPORT_ID, 0x10, sub_cmd, enabled as u8, 0, 0])?;
+        self.controller
+            .send_feature(&[REPORT_ID, 0x10, sub_cmd, enabled as u8, 0, 0])?;
         thread::sleep(CMD_DELAY);
         Ok(())
     }

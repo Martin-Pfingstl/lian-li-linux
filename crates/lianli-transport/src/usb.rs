@@ -125,8 +125,13 @@ impl UsbTransport {
         if n != data.len() {
             warn!(
                 "USB short write: {n}/{} bytes on EP 0x{:02x} ({})",
-                data.len(), self.ep_out,
-                if self.ep_out_interrupt { "interrupt" } else { "bulk" }
+                data.len(),
+                self.ep_out,
+                if self.ep_out_interrupt {
+                    "interrupt"
+                } else {
+                    "bulk"
+                }
             );
         }
         Ok(n)
@@ -182,14 +187,10 @@ fn detect_endpoint_types(device: &Device<GlobalContext>) -> (bool, bool) {
     for iface in config.interfaces() {
         for desc in iface.descriptors() {
             for ep in desc.endpoint_descriptors() {
-                if ep.address() == EP_IN
-                    && ep.transfer_type() == rusb::TransferType::Interrupt
-                {
+                if ep.address() == EP_IN && ep.transfer_type() == rusb::TransferType::Interrupt {
                     in_interrupt = true;
                 }
-                if ep.address() == EP_OUT
-                    && ep.transfer_type() == rusb::TransferType::Interrupt
-                {
+                if ep.address() == EP_OUT && ep.transfer_type() == rusb::TransferType::Interrupt {
                     out_interrupt = true;
                 }
             }

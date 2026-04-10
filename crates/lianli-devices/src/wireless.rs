@@ -154,7 +154,11 @@ impl WirelessFanType {
 
     /// Number of LEDs on the pump head (AIO devices only).
     pub fn pump_led_count(self) -> u8 {
-        if self.is_aio() { 24 } else { 0 }
+        if self.is_aio() {
+            24
+        } else {
+            0
+        }
     }
 
     /// Total LED count override for non-fan devices.
@@ -177,13 +181,13 @@ impl WirelessFanType {
     /// Classify fan type from the fan-type byte in the device record.
     fn from_fan_type_byte(b: u8) -> Self {
         match b {
-            20..=23 => Self::Slv3Led,          // SLV3 LED (120/140, normal/reverse)
-            24..=26 => Self::Slv3Lcd,          // SLV3 LCD (120/140, normal/reverse)
-            27 | 32..=35 => Self::Tlv2Lcd,     // TLV2 LCD
-            28..=31 => Self::Tlv2Led,          // TLV2 LED (120/140, normal/reverse)
-            36..=39 => Self::SlInf,            // SL-INF (LED only)
-            40 => Self::Clv1,                  // RL120
-            41..=42 => Self::Clv1,             // CLV1 variants
+            20..=23 => Self::Slv3Led,      // SLV3 LED (120/140, normal/reverse)
+            24..=26 => Self::Slv3Lcd,      // SLV3 LCD (120/140, normal/reverse)
+            27 | 32..=35 => Self::Tlv2Lcd, // TLV2 LCD
+            28..=31 => Self::Tlv2Led,      // TLV2 LED (120/140, normal/reverse)
+            36..=39 => Self::SlInf,        // SL-INF (LED only)
+            40 => Self::Clv1,              // RL120
+            41..=42 => Self::Clv1,         // CLV1 variants
             _ => Self::Unknown,
         }
     }
@@ -226,8 +230,7 @@ impl DiscoveredDevice {
     pub fn mac_str(&self) -> String {
         format!(
             "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-            self.mac[0], self.mac[1], self.mac[2],
-            self.mac[3], self.mac[4], self.mac[5],
+            self.mac[0], self.mac[1], self.mac[2], self.mac[3], self.mac[4], self.mac[5],
         )
     }
 
@@ -237,7 +240,11 @@ impl DiscoveredDevice {
 
     /// Pump RPM (from slot 3) for AIO devices.
     pub fn pump_rpm(&self) -> Option<u16> {
-        if self.is_aio() { Some(self.fan_rpms[3]) } else { None }
+        if self.is_aio() {
+            Some(self.fan_rpms[3])
+        } else {
+            None
+        }
     }
 }
 
@@ -245,21 +252,20 @@ impl fmt::Display for DiscoveredDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mac = self.mac_str();
         if self.fan_type.is_aio() {
-            let temp_str = self.coolant_temp_c
+            let temp_str = self
+                .coolant_temp_c
                 .map(|t| format!(", coolant={t}°C"))
                 .unwrap_or_default();
             write!(
                 f,
                 "{} ({:?}, {} fans, pump={}rpm{temp_str}, ch={}, rx={})",
-                mac, self.fan_type, self.fan_count,
-                self.fan_rpms[3], self.channel, self.rx_type,
+                mac, self.fan_type, self.fan_count, self.fan_rpms[3], self.channel, self.rx_type,
             )
         } else {
             write!(
                 f,
                 "{} ({:?}, {} fans, ch={}, rx={})",
-                mac, self.fan_type, self.fan_count,
-                self.channel, self.rx_type,
+                mac, self.fan_type, self.fan_count, self.channel, self.rx_type,
             )
         }
     }
@@ -546,7 +552,9 @@ impl WirelessController {
             let mut found_devices = false;
             let mut consecutive_errors = 0u32;
             while !stop_flag.load(Ordering::SeqCst) {
-                if let Err(err) = poll_and_discover(&rx, &discovered_devices, &mobo_pwm, &master_mac) {
+                if let Err(err) =
+                    poll_and_discover(&rx, &discovered_devices, &mobo_pwm, &master_mac)
+                {
                     consecutive_errors += 1;
                     if consecutive_errors <= 3 {
                         warn!("RX polling error ({consecutive_errors}): {err:?}");
@@ -694,7 +702,9 @@ impl WirelessController {
     /// A SaveConfig broadcast is sent afterwards to persist the binding.
     pub fn bind_device(&self, mac: &[u8; 6]) -> Result<()> {
         let tx = self.tx.as_ref().context("TX not connected")?;
-        let device = self.discovered_devices.lock()
+        let device = self
+            .discovered_devices
+            .lock()
             .iter()
             .find(|d| &d.mac == mac)
             .cloned()
@@ -724,7 +734,10 @@ impl WirelessController {
 
         info!(
             "Bind sent to {} ({}) rx={} ch={}",
-            device.mac_str(), device.fan_type.display_name(), new_rx, master_ch
+            device.mac_str(),
+            device.fan_type.display_name(),
+            new_rx,
+            master_ch
         );
         Ok(())
     }
@@ -734,7 +747,9 @@ impl WirelessController {
         let devices = self.discovered_devices.lock();
         let local_mac = *self.master_mac.lock();
         for rx in 1..15u8 {
-            let in_use = devices.iter().any(|d| d.master_mac == local_mac && d.rx_type == rx);
+            let in_use = devices
+                .iter()
+                .any(|d| d.master_mac == local_mac && d.rx_type == rx);
             if !in_use {
                 return rx;
             }
@@ -765,7 +780,9 @@ impl WirelessController {
                 packet[3] = 0xFF;
                 let start = chunk_idx as usize * RF_CHUNK_SIZE;
                 packet[4..64].copy_from_slice(&rf_data[start..start + RF_CHUNK_SIZE]);
-                handle.write(&packet, USB_TIMEOUT).context("sending SaveConfig")?;
+                handle
+                    .write(&packet, USB_TIMEOUT)
+                    .context("sending SaveConfig")?;
                 thread::sleep(Duration::from_millis(1));
             }
             thread::sleep(Duration::from_millis(200));
@@ -814,7 +831,8 @@ impl WirelessController {
     pub fn set_fan_speeds_by_mac(&self, mac: &[u8; 6], fan_pwm: &[u8; 4]) -> Result<()> {
         let tx = self.tx.as_ref().context("TX device not connected")?;
 
-        let device = self.discovered_devices
+        let device = self
+            .discovered_devices
             .lock()
             .iter()
             .find(|d| &d.mac == mac)
@@ -833,13 +851,13 @@ impl WirelessController {
 
         // Build RF PWM packet (240 bytes)
         let mut rf_data = vec![0u8; RF_DATA_SIZE];
-        rf_data[0] = RF_SELECT;            // RF_Select envelope command
-        rf_data[1] = RF_PWM_CMD;           // PWM sub-command (0x10)
+        rf_data[0] = RF_SELECT; // RF_Select envelope command
+        rf_data[1] = RF_PWM_CMD; // PWM sub-command (0x10)
         rf_data[2..8].copy_from_slice(&device.mac);
         rf_data[8..14].copy_from_slice(&master_mac);
-        rf_data[14] = device.rx_type;      // Per-device RX type from discovery
-        rf_data[15] = master_ch;           // Target channel = master channel
-        rf_data[16] = 1;                   // Sequence index (1 for one-shot)
+        rf_data[14] = device.rx_type; // Per-device RX type from discovery
+        rf_data[15] = master_ch; // Target channel = master channel
+        rf_data[16] = 1; // Sequence index (1 for one-shot)
         rf_data[17..21].copy_from_slice(&pwm);
 
         // Send as 4 USB packets (60-byte chunks)
@@ -847,9 +865,9 @@ impl WirelessController {
         for chunk_idx in 0..RF_CHUNKS as u8 {
             let mut packet = vec![0u8; 64];
             packet[0] = USB_CMD_SEND_RF;
-            packet[1] = chunk_idx;         // Sequence number
-            packet[2] = device.channel;    // Device's current RF channel
-            packet[3] = device.rx_type;    // Device's RX type
+            packet[1] = chunk_idx; // Sequence number
+            packet[2] = device.channel; // Device's current RF channel
+            packet[3] = device.rx_type; // Device's RX type
 
             let start = chunk_idx as usize * RF_CHUNK_SIZE;
             let end = start + RF_CHUNK_SIZE;
@@ -863,7 +881,10 @@ impl WirelessController {
 
         debug!(
             "Set fan PWM for {} (rx={}, ch={}): {:?}",
-            device.mac_str(), device.rx_type, device.channel, pwm
+            device.mac_str(),
+            device.rx_type,
+            device.channel,
+            pwm
         );
         Ok(())
     }
@@ -902,7 +923,15 @@ impl WirelessController {
         for color in colors {
             raw_rgb.extend_from_slice(color);
         }
-        self.send_rgb_payload(mac, &raw_rgb, led_num, 1, 5000, effect_index, header_repeats)
+        self.send_rgb_payload(
+            mac,
+            &raw_rgb,
+            led_num,
+            1,
+            5000,
+            effect_index,
+            header_repeats,
+        )
     }
 
     /// Send a multi-frame animation to a wireless device.
@@ -931,7 +960,15 @@ impl WirelessController {
             }
         }
 
-        self.send_rgb_payload(mac, &raw_rgb, led_num, total_frames, interval_ms, effect_index, header_repeats)
+        self.send_rgb_payload(
+            mac,
+            &raw_rgb,
+            led_num,
+            total_frames,
+            interval_ms,
+            effect_index,
+            header_repeats,
+        )
     }
 
     /// Core RF RGB payload sender.
@@ -961,12 +998,10 @@ impl WirelessController {
 
         let master_mac = *self.master_mac.lock();
 
-        let compressed = crate::tinyuz::compress(raw_rgb)
-            .context("failed to compress RGB data")?;
+        let compressed = crate::tinyuz::compress(raw_rgb).context("failed to compress RGB data")?;
 
         const LZO_RF_VALID_LEN: usize = 220;
-        let total_pk_num =
-            (compressed.len() as f64 / LZO_RF_VALID_LEN as f64).ceil() as u8;
+        let total_pk_num = (compressed.len() as f64 / LZO_RF_VALID_LEN as f64).ceil() as u8;
 
         let mut offset: usize = 0;
         let mut index: u8 = 0;
@@ -1026,7 +1061,12 @@ impl WirelessController {
 
         debug!(
             "Sent RGB to {} ({} frame(s), {} LEDs, {} compressed, {} packets, {}ms interval)",
-            device.mac_str(), total_frames, led_num, compressed.len(), index, interval_ms
+            device.mac_str(),
+            total_frames,
+            led_num,
+            compressed.len(),
+            index,
+            interval_ms
         );
         Ok(())
     }
@@ -1124,7 +1164,7 @@ fn poll_and_discover(
     // GetDev command: [0x10, page_number, ...pad...]
     let mut cmd = vec![0u8; 64];
     cmd[0] = USB_CMD_SEND_RF; // GetDev uses the same command byte
-    cmd[1] = 0x01;            // Page 1
+    cmd[1] = 0x01; // Page 1
 
     let handle = rx.lock();
     handle
@@ -1177,15 +1217,22 @@ fn poll_and_discover(
                     break;
                 }
 
-                if let Some(device) = parse_device_record(&response[offset..offset + 42], idx as u8) {
+                if let Some(device) = parse_device_record(&response[offset..offset + 42], idx as u8)
+                {
                     debug!(
                         "  [{}] {} type=0x{:02x} fans={} RPM=[{},{},{},{}] PWM=[{},{},{},{}]",
-                        idx, device, device.device_type,
+                        idx,
+                        device,
+                        device.device_type,
                         device.fan_count,
-                        device.fan_rpms[0], device.fan_rpms[1],
-                        device.fan_rpms[2], device.fan_rpms[3],
-                        device.current_pwm[0], device.current_pwm[1],
-                        device.current_pwm[2], device.current_pwm[3],
+                        device.fan_rpms[0],
+                        device.fan_rpms[1],
+                        device.fan_rpms[2],
+                        device.fan_rpms[3],
+                        device.current_pwm[0],
+                        device.current_pwm[1],
+                        device.current_pwm[2],
+                        device.current_pwm[3],
                     );
                     found.push(device);
                 }
@@ -1201,9 +1248,16 @@ fn poll_and_discover(
                     let local_mac = *master_mac.lock();
                     let bound = devices.iter().filter(|d| d.master_mac == local_mac).count();
                     let unbound = devices.len() - bound;
-                    info!("Discovered {} wireless device(s) ({bound} bound, {unbound} unbound)", devices.len());
+                    info!(
+                        "Discovered {} wireless device(s) ({bound} bound, {unbound} unbound)",
+                        devices.len()
+                    );
                     for d in devices.iter().filter(|d| d.master_mac != local_mac) {
-                        info!("  {} ({}) not bound to this dongle", d.mac_str(), d.fan_type.display_name());
+                        info!(
+                            "  {} ({}) not bound to this dongle",
+                            d.mac_str(),
+                            d.fan_type.display_name()
+                        );
                     }
                 }
             }

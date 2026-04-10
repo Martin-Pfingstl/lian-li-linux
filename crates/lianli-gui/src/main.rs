@@ -5,13 +5,13 @@ mod state;
 
 use lianli_shared::fan::{FanConfig, FanCurve, FanGroup, FanSpeed};
 use lianli_shared::ipc::IpcRequest;
+use lianli_shared::media::SensorSourceConfig;
 use lianli_shared::rgb::{
     RgbAppConfig, RgbDeviceConfig, RgbDirection, RgbEffect, RgbMode, RgbScope, RgbZoneConfig,
 };
+use lianli_shared::sensors::Unit;
 use slint::{Model, ModelRc, VecModel};
 use std::sync::{Arc, Mutex};
-use lianli_shared::sensors::Unit;
-use lianli_shared::media::{SensorSourceConfig};
 
 slint::include_modules!();
 
@@ -58,7 +58,8 @@ fn main() {
     {
         let tx = backend.tx.clone();
         window.on_bind_wireless_device(move |device_id| {
-            let mac = device_id.to_string()
+            let mac = device_id
+                .to_string()
                 .strip_prefix("wireless-unbound:")
                 .unwrap_or(&device_id)
                 .to_string();
@@ -85,13 +86,11 @@ fn main() {
         let tx = backend.tx.clone();
         let shared = shared.clone();
         window.on_toggle_openrgb(move |enabled| {
-            {
-                let mut state = shared.lock().unwrap();
-                if let Some(ref mut c) = state.config {
-                    let rgb = c.rgb.get_or_insert_with(Default::default);
-                    rgb.openrgb_server = enabled;
-                    let _ = tx.send(backend::BackendCommand::SaveConfig(c.clone()));
-                }
+            let mut state = shared.lock().unwrap();
+            if let Some(ref mut c) = state.config {
+                let rgb = c.rgb.get_or_insert_with(Default::default);
+                rgb.openrgb_server = enabled;
+                let _ = tx.send(backend::BackendCommand::SaveConfig(c.clone()));
             }
         });
     }
@@ -106,7 +105,9 @@ fn main() {
                 c.default_fps = fps as f32;
             }
             drop(state);
-            if let Some(w) = weak.upgrade() { w.set_config_dirty(true); }
+            if let Some(w) = weak.upgrade() {
+                w.set_config_dirty(true);
+            }
         });
     }
 
@@ -121,7 +122,9 @@ fn main() {
                 rgb.openrgb_port = port as u16;
             }
             drop(state);
-            if let Some(w) = weak.upgrade() { w.set_config_dirty(true); }
+            if let Some(w) = weak.upgrade() {
+                w.set_config_dirty(true);
+            }
         });
     }
 
@@ -138,7 +141,9 @@ fn main() {
                 };
             }
             drop(state);
-            if let Some(w) = weak.upgrade() { w.set_config_dirty(true); }
+            if let Some(w) = weak.upgrade() {
+                w.set_config_dirty(true);
+            }
         });
     }
 
@@ -150,13 +155,15 @@ fn main() {
             let mut state = shared.lock().unwrap();
             if let Some(ref mut c) = state.config {
                 let fc = c.fans.get_or_insert_with(|| FanConfig {
-                        speeds: vec![],
-                        update_interval_ms: 500,
-                    });
+                    speeds: vec![],
+                    update_interval_ms: 500,
+                });
                 fc.update_interval_ms = ms as u64;
             }
             drop(state);
-            if let Some(w) = weak.upgrade() { w.set_config_dirty(true); }
+            if let Some(w) = weak.upgrade() {
+                w.set_config_dirty(true);
+            }
         });
     }
 
@@ -177,7 +184,11 @@ fn main() {
             if let Some(w) = weak.upgrade() {
                 update_rgb_zone_colors_in_place(&w, &dev_id, zone, |colors| {
                     if colors.len() < 4 {
-                        colors.push(RgbColorData { r: 255, g: 255, b: 255 });
+                        colors.push(RgbColorData {
+                            r: 255,
+                            g: 255,
+                            b: 255,
+                        });
                     }
                 });
             }
@@ -221,11 +232,7 @@ fn main() {
     backend.send(backend::BackendCommand::Shutdown);
 }
 
-fn wire_rgb_callbacks(
-    window: &MainWindow,
-    backend: &backend::BackendHandle,
-    shared: &Shared,
-) {
+fn wire_rgb_callbacks(window: &MainWindow, backend: &backend::BackendHandle, shared: &Shared) {
     // RGB set mode
     {
         let tx = backend.tx.clone();
@@ -263,7 +270,9 @@ fn wire_rgb_callbacks(
             send_rgb_effect(&tx, &shared, &dev_id, zone, &effect);
             // In-place update to avoid destroying expanded-zone state
             if let Some(w) = weak.upgrade() {
-                update_rgb_zone_in_place(&w, &dev_id, zone, |z| { z.speed = speed; });
+                update_rgb_zone_in_place(&w, &dev_id, zone, |z| {
+                    z.speed = speed;
+                });
             }
         });
     }
@@ -281,7 +290,9 @@ fn wire_rgb_callbacks(
             send_rgb_effect(&tx, &shared, &dev_id, zone, &effect);
             // In-place update to avoid destroying expanded-zone state
             if let Some(w) = weak.upgrade() {
-                update_rgb_zone_in_place(&w, &dev_id, zone, |z| { z.brightness = brightness; });
+                update_rgb_zone_in_place(&w, &dev_id, zone, |z| {
+                    z.brightness = brightness;
+                });
             }
         });
     }
@@ -349,14 +360,19 @@ fn wire_rgb_callbacks(
                         if dev_data.device_id.as_str() == dev_id {
                             // Update target zone
                             if let Some(zone_data) = dev_data.zones.row_data(zone as usize) {
-                                zone_data.colors.set_row_data(cidx as usize, RgbColorData { r, g, b });
+                                zone_data
+                                    .colors
+                                    .set_row_data(cidx as usize, RgbColorData { r, g, b });
                             }
                             // Broadcast to other zones when synced
                             if zone == 0 && dev_data.synced {
                                 for zi in 1..dev_data.zones.row_count() {
                                     if let Some(zd) = dev_data.zones.row_data(zi) {
                                         if (cidx as usize) < zd.colors.row_count() {
-                                            zd.colors.set_row_data(cidx as usize, RgbColorData { r, g, b });
+                                            zd.colors.set_row_data(
+                                                cidx as usize,
+                                                RgbColorData { r, g, b },
+                                            );
                                         }
                                     }
                                 }
@@ -516,21 +532,14 @@ fn wire_rgb_callbacks(
     }
 }
 
-fn wire_fan_callbacks(
-    window: &MainWindow,
-    _backend: &backend::BackendHandle,
-    shared: &Shared,
-) {
+fn wire_fan_callbacks(window: &MainWindow, _backend: &backend::BackendHandle, shared: &Shared) {
     {
         let shared = shared.clone();
         let weak = window.as_weak();
         window.on_fan_add_curve(move || {
             {
                 let mut state = shared.lock().unwrap();
-                let default_source = state
-                    .available_sensors
-                    .first()
-                    .map(|s| s.source.clone());
+                let default_source = state.available_sensors.first().map(|s| s.source.clone());
                 if let Some(ref mut c) = state.config {
                     let n = c.fan_curves.len() + 1;
                     c.fan_curves.push(FanCurve {
@@ -592,9 +601,14 @@ fn wire_fan_callbacks(
                 let source = if display.ends_with("Custom command") {
                     None
                 } else {
-                    let sensor_idx: usize = display.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    let sensor_idx: usize = display
+                        .split('.')
+                        .next()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
                     sensor_idx.checked_sub(1).and_then(|i| {
-                        state.available_sensors
+                        state
+                            .available_sensors
                             .iter()
                             .filter(|s| s.unit == Unit::C)
                             .nth(i)
@@ -661,14 +675,16 @@ fn wire_fan_callbacks(
                 let model = w.get_fan_curves();
                 if let Some(mut curve_data) = model.row_data(cidx_u) {
                     // Update inner points model in-place
-                    curve_data.points.set_row_data(pidx_u, CurvePoint { temp, speed });
+                    curve_data
+                        .points
+                        .set_row_data(pidx_u, CurvePoint { temp, speed });
                     // Update segment models
-                    curve_data.curve_segments = slint::ModelRc::new(
-                        slint::VecModel::from(conversions::build_curve_segments(&sorted)),
-                    );
-                    curve_data.clamp_segments = slint::ModelRc::new(
-                        slint::VecModel::from(conversions::build_clamp_segments(&sorted)),
-                    );
+                    curve_data.curve_segments = slint::ModelRc::new(slint::VecModel::from(
+                        conversions::build_curve_segments(&sorted),
+                    ));
+                    curve_data.clamp_segments = slint::ModelRc::new(slint::VecModel::from(
+                        conversions::build_clamp_segments(&sorted),
+                    ));
                     model.set_row_data(cidx_u, curve_data);
                     w.set_config_dirty(true);
                 }
@@ -729,13 +745,21 @@ fn wire_fan_callbacks(
                         speeds: vec![],
                         update_interval_ms: 500,
                     });
-                    let group = fc.speeds.iter_mut().find(|g| g.device_id.as_deref() == Some(&dev_id));
+                    let group = fc
+                        .speeds
+                        .iter_mut()
+                        .find(|g| g.device_id.as_deref() == Some(&dev_id));
                     let group = if let Some(g) = group {
                         g
                     } else {
                         fc.speeds.push(FanGroup {
                             device_id: Some(dev_id.clone()),
-                            speeds: [FanSpeed::Constant(0), FanSpeed::Constant(0), FanSpeed::Constant(0), FanSpeed::Constant(0)],
+                            speeds: [
+                                FanSpeed::Constant(0),
+                                FanSpeed::Constant(0),
+                                FanSpeed::Constant(0),
+                                FanSpeed::Constant(0),
+                            ],
                         });
                         fc.speeds.last_mut().unwrap()
                     };
@@ -768,9 +792,15 @@ fn wire_fan_callbacks(
                         speeds: vec![],
                         update_interval_ms: 500,
                     });
-                    if let Some(group) = fc.speeds.iter_mut().find(|g| g.device_id.as_deref() == Some(&dev_id)) {
+                    if let Some(group) = fc
+                        .speeds
+                        .iter_mut()
+                        .find(|g| g.device_id.as_deref() == Some(&dev_id))
+                    {
                         if slot < 4 {
-                            group.speeds[slot] = FanSpeed::Constant(((percent as f32 / 100.0) * 255.0).round() as u8);
+                            group.speeds[slot] = FanSpeed::Constant(
+                                ((percent as f32 / 100.0) * 255.0).round() as u8,
+                            );
                         }
                     }
                 }
@@ -795,10 +825,7 @@ fn wire_fan_callbacks(
     }
 }
 
-fn wire_lcd_callbacks(
-    window: &MainWindow,
-    shared: &Shared,
-) {
+fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared) {
     {
         let shared = shared.clone();
         let weak = window.as_weak();
@@ -849,34 +876,69 @@ fn wire_lcd_callbacks(
             let field_str = field.to_string();
             // Only rebuild UI for dropdown/button fields that affect layout.
             // Text fields update in-place in the LineEdit — rebuilding would steal focus.
-            let needs_refresh = matches!(field_str.as_str(), "device" | "media_type" | "orientation" | "sensor_source" | "doublegauge_display_1" | "doublegauge_display_2")
-                || field_str == "gauge_range_add"
+            let needs_refresh = matches!(
+                field_str.as_str(),
+                "device"
+                    | "media_type"
+                    | "orientation"
+                    | "sensor_source"
+                    | "doublegauge_display_1"
+                    | "doublegauge_display_2"
+            ) || field_str == "gauge_range_add"
                 || field_str == "gauge_range_remove";
             {
                 let mut state = shared.lock().unwrap();
                 let devices = state.devices.clone();
                 let resolved_sensor_source: Option<lianli_shared::media::SensorSourceConfig> = {
                     let val_str = val.to_string();
-                    let sensor_idx: usize = val_str.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    let sensor_idx: usize = val_str
+                        .split('.')
+                        .next()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
                     let is_sensor_picker = field_str == "sensor_source"
                         || field_str == "doublegauge_display_1"
                         || field_str == "doublegauge_display_2";
                     if is_sensor_picker && !val_str.ends_with("Custom command") && sensor_idx > 0 {
-                        state.available_sensors.get(sensor_idx - 1).map(|sensor| match &sensor.source {
-                            lianli_shared::sensors::SensorSource::Hwmon { name, label, device_path } =>
-                                lianli_shared::media::SensorSourceConfig::Hwmon {
-                                    name: name.clone(), label: label.clone(), device_path: device_path.clone(),
+                        state.available_sensors.get(sensor_idx - 1).map(|sensor| {
+                            match &sensor.source {
+                                lianli_shared::sensors::SensorSource::Hwmon {
+                                    name,
+                                    label,
+                                    device_path,
+                                } => lianli_shared::media::SensorSourceConfig::Hwmon {
+                                    name: name.clone(),
+                                    label: label.clone(),
+                                    device_path: device_path.clone(),
                                 },
-                            lianli_shared::sensors::SensorSource::NvidiaGpu { gpu_index } =>
-                                lianli_shared::media::SensorSourceConfig::NvidiaGpu {gpu_index: *gpu_index},
-                            lianli_shared::sensors::SensorSource::Command { cmd } =>
-                                lianli_shared::media::SensorSourceConfig::Command { cmd: cmd.clone() },
-                            lianli_shared::sensors::SensorSource::WirelessCoolant { device_id } =>
-                                lianli_shared::media::SensorSourceConfig::WirelessCoolant { device_id: device_id.clone() },
-                            lianli_shared::sensors::SensorSource::CpuUsage => lianli_shared::media::SensorSourceConfig::CpuUsage,
-                            lianli_shared::sensors::SensorSource::MemUsage => lianli_shared::media::SensorSourceConfig::MemUsage,
-                            lianli_shared::sensors::SensorSource::MemUsed => lianli_shared::media::SensorSourceConfig::MemUsed,
-                            lianli_shared::sensors::SensorSource::MemFree => lianli_shared::media::SensorSourceConfig::MemFree,
+                                lianli_shared::sensors::SensorSource::NvidiaGpu { gpu_index } => {
+                                    lianli_shared::media::SensorSourceConfig::NvidiaGpu {
+                                        gpu_index: *gpu_index,
+                                    }
+                                }
+                                lianli_shared::sensors::SensorSource::Command { cmd } => {
+                                    lianli_shared::media::SensorSourceConfig::Command {
+                                        cmd: cmd.clone(),
+                                    }
+                                }
+                                lianli_shared::sensors::SensorSource::WirelessCoolant {
+                                    device_id,
+                                } => lianli_shared::media::SensorSourceConfig::WirelessCoolant {
+                                    device_id: device_id.clone(),
+                                },
+                                lianli_shared::sensors::SensorSource::CpuUsage => {
+                                    lianli_shared::media::SensorSourceConfig::CpuUsage
+                                }
+                                lianli_shared::sensors::SensorSource::MemUsage => {
+                                    lianli_shared::media::SensorSourceConfig::MemUsage
+                                }
+                                lianli_shared::sensors::SensorSource::MemUsed => {
+                                    lianli_shared::media::SensorSourceConfig::MemUsed
+                                }
+                                lianli_shared::sensors::SensorSource::MemFree => {
+                                    lianli_shared::media::SensorSourceConfig::MemFree
+                                }
+                            }
                         })
                     } else {
                         None
@@ -944,47 +1006,74 @@ fn wire_lcd_callbacks(
                                     Some(std::path::PathBuf::from(val));
                             }
                             "fps" => lcd.fps = Some(val.parse::<f32>().unwrap_or(30.0)),
-                            "rgb_r" => lcd.rgb.get_or_insert([0, 0, 0])[0] = val.parse().unwrap_or(0),
-                            "rgb_g" => lcd.rgb.get_or_insert([0, 0, 0])[1] = val.parse().unwrap_or(0),
-                            "rgb_b" => lcd.rgb.get_or_insert([0, 0, 0])[2] = val.parse().unwrap_or(0),
+                            "rgb_r" => {
+                                lcd.rgb.get_or_insert([0, 0, 0])[0] = val.parse().unwrap_or(0)
+                            }
+                            "rgb_g" => {
+                                lcd.rgb.get_or_insert([0, 0, 0])[1] = val.parse().unwrap_or(0)
+                            }
+                            "rgb_b" => {
+                                lcd.rgb.get_or_insert([0, 0, 0])[2] = val.parse().unwrap_or(0)
+                            }
                             "sensor_decimal_places" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).decimal_places = val.parse().unwrap_or(0);
+                                lcd.sensor.get_or_insert_with(default_sensor).decimal_places =
+                                    val.parse().unwrap_or(0);
                             }
                             "sensor_update_interval" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).update_interval_ms = val.parse().unwrap_or(1000);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .update_interval_ms = val.parse().unwrap_or(1000);
                             }
                             "sensor_value_font_size" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).value_font_size = val.parse().unwrap_or(120.0);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .value_font_size = val.parse().unwrap_or(120.0);
                             }
                             "sensor_unit_font_size" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).unit_font_size = val.parse().unwrap_or(40.0);
+                                lcd.sensor.get_or_insert_with(default_sensor).unit_font_size =
+                                    val.parse().unwrap_or(40.0);
                             }
                             "sensor_label_font_size" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).label_font_size = val.parse().unwrap_or(30.0);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .label_font_size = val.parse().unwrap_or(30.0);
                             }
                             "sensor_start_angle" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).gauge_start_angle = val.parse().unwrap_or(135.0);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .gauge_start_angle = val.parse().unwrap_or(135.0);
                             }
                             "sensor_sweep_angle" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).gauge_sweep_angle = val.parse().unwrap_or(270.0);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .gauge_sweep_angle = val.parse().unwrap_or(270.0);
                             }
                             "sensor_outer_radius" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).gauge_outer_radius = val.parse().unwrap_or(200.0);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .gauge_outer_radius = val.parse().unwrap_or(200.0);
                             }
                             "sensor_thickness" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).gauge_thickness = val.parse().unwrap_or(30.0);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .gauge_thickness = val.parse().unwrap_or(30.0);
                             }
                             "sensor_corner_radius" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).bar_corner_radius = val.parse().unwrap_or(5.0);
+                                lcd.sensor
+                                    .get_or_insert_with(default_sensor)
+                                    .bar_corner_radius = val.parse().unwrap_or(5.0);
                             }
                             "sensor_value_offset" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).value_offset = val.parse().unwrap_or(0);
+                                lcd.sensor.get_or_insert_with(default_sensor).value_offset =
+                                    val.parse().unwrap_or(0);
                             }
                             "sensor_unit_offset" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).unit_offset = val.parse().unwrap_or(0);
+                                lcd.sensor.get_or_insert_with(default_sensor).unit_offset =
+                                    val.parse().unwrap_or(0);
                             }
                             "sensor_label_offset" => {
-                                lcd.sensor.get_or_insert_with(default_sensor).label_offset = val.parse().unwrap_or(0);
+                                lcd.sensor.get_or_insert_with(default_sensor).label_offset =
+                                    val.parse().unwrap_or(0);
                             }
                             "sensor_text_color_r" => {
                                 lcd.sensor.get_or_insert_with(default_sensor).text_color[0] =
@@ -1036,7 +1125,9 @@ fn wire_lcd_callbacks(
                                 });
                             }
                             "doublegauge_header" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).header = val;
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .header = val;
                             }
                             "doublegauge_display_1" => {
                                 if let Some(source) = resolved_sensor_source.clone() {
@@ -1060,66 +1151,106 @@ fn wire_lcd_callbacks(
                                     lianli_shared::media::SensorSourceConfig::Command { cmd: val };
                             }
                             "doublegauge_gauge_1_min" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).gauge_1_min = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .gauge_1_min = val.parse().unwrap_or(0);
                             }
                             "doublegauge_gauge_1_max" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).gauge_1_max = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .gauge_1_max = val.parse().unwrap_or(0);
                             }
                             "doublegauge_gauge_2_min" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).gauge_2_min = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .gauge_2_min = val.parse().unwrap_or(0);
                             }
                             "doublegauge_gauge_2_max" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).gauge_2_max = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .gauge_2_max = val.parse().unwrap_or(0);
                             }
                             "doublegauge_value_1_min" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).value_1_min = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .value_1_min = val.parse().unwrap_or(0);
                             }
                             "doublegauge_value_1_max" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).value_1_max = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .value_1_max = val.parse().unwrap_or(0);
                             }
                             "doublegauge_display_value_1_min" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).display_value_1_min = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .display_value_1_min = val.parse().unwrap_or(0);
                             }
                             "doublegauge_display_value_1_max" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).display_value_1_max = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .display_value_1_max = val.parse().unwrap_or(0);
                             }
                             "doublegauge_value_2_min" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).value_2_min = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .value_2_min = val.parse().unwrap_or(0);
                             }
                             "doublegauge_value_2_max" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).value_2_max = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .value_2_max = val.parse().unwrap_or(0);
                             }
                             "doublegauge_display_value_2_min" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).display_value_2_min = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .display_value_2_min = val.parse().unwrap_or(0);
                             }
                             "doublegauge_display_value_2_max" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).display_value_2_max = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .display_value_2_max = val.parse().unwrap_or(0);
                             }
                             "doublegauge_label_1" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).label_1 = val;
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .label_1 = val;
                             }
                             "doublegauge_label_2" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).label_2 = val;
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .label_2 = val;
                             }
                             "doublegauge_unit_1" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).unit_1 = val;
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .unit_1 = val;
                             }
                             "doublegauge_unit_2" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).unit_2 = val;
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .unit_2 = val;
                             }
                             "doublegauge_decimals_1" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).decimals_1 = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .decimals_1 = val.parse().unwrap_or(0);
                             }
                             "doublegauge_decimals_2" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).decimals_2 = val.parse().unwrap_or(0);
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .decimals_2 = val.parse().unwrap_or(0);
                             }
                             "doublegauge_clamp_1" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).clamp_1 = val == "true";
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .clamp_1 = val == "true";
                             }
                             "doublegauge_clamp_2" => {
-                                lcd.doublegauge.get_or_insert_with(default_doublegauge).clamp_2 = val == "true";
+                                lcd.doublegauge
+                                    .get_or_insert_with(default_doublegauge)
+                                    .clamp_2 = val == "true";
                             }
-                            
+
                             f if f.starts_with("gauge_range_remove") => {
                                 if let Ok(ridx) = val.parse::<usize>() {
                                     let s = lcd.sensor.get_or_insert_with(default_sensor);
@@ -1130,7 +1261,9 @@ fn wire_lcd_callbacks(
                             }
                             f if f.starts_with("gauge_range_max_") => {
                                 if let Some(ridx_str) = f.strip_prefix("gauge_range_max_") {
-                                    if let (Ok(ridx), Ok(v)) = (ridx_str.parse::<usize>(), val.parse::<f32>()) {
+                                    if let (Ok(ridx), Ok(v)) =
+                                        (ridx_str.parse::<usize>(), val.parse::<f32>())
+                                    {
                                         let s = lcd.sensor.get_or_insert_with(default_sensor);
                                         if let Some(r) = s.gauge_ranges.get_mut(ridx) {
                                             r.max = Some(v);
@@ -1140,25 +1273,37 @@ fn wire_lcd_callbacks(
                             }
                             f if f.starts_with("gauge_range_r_") => {
                                 if let Some(ridx_str) = f.strip_prefix("gauge_range_r_") {
-                                    if let (Ok(ridx), Ok(v)) = (ridx_str.parse::<usize>(), val.parse::<u8>()) {
+                                    if let (Ok(ridx), Ok(v)) =
+                                        (ridx_str.parse::<usize>(), val.parse::<u8>())
+                                    {
                                         let s = lcd.sensor.get_or_insert_with(default_sensor);
-                                        if let Some(r) = s.gauge_ranges.get_mut(ridx) { r.color[0] = v; }
+                                        if let Some(r) = s.gauge_ranges.get_mut(ridx) {
+                                            r.color[0] = v;
+                                        }
                                     }
                                 }
                             }
                             f if f.starts_with("gauge_range_g_") => {
                                 if let Some(ridx_str) = f.strip_prefix("gauge_range_g_") {
-                                    if let (Ok(ridx), Ok(v)) = (ridx_str.parse::<usize>(), val.parse::<u8>()) {
+                                    if let (Ok(ridx), Ok(v)) =
+                                        (ridx_str.parse::<usize>(), val.parse::<u8>())
+                                    {
                                         let s = lcd.sensor.get_or_insert_with(default_sensor);
-                                        if let Some(r) = s.gauge_ranges.get_mut(ridx) { r.color[1] = v; }
+                                        if let Some(r) = s.gauge_ranges.get_mut(ridx) {
+                                            r.color[1] = v;
+                                        }
                                     }
                                 }
                             }
                             f if f.starts_with("gauge_range_b_") => {
                                 if let Some(ridx_str) = f.strip_prefix("gauge_range_b_") {
-                                    if let (Ok(ridx), Ok(v)) = (ridx_str.parse::<usize>(), val.parse::<u8>()) {
+                                    if let (Ok(ridx), Ok(v)) =
+                                        (ridx_str.parse::<usize>(), val.parse::<u8>())
+                                    {
                                         let s = lcd.sensor.get_or_insert_with(default_sensor);
-                                        if let Some(r) = s.gauge_ranges.get_mut(ridx) { r.color[2] = v; }
+                                        if let Some(r) = s.gauge_ranges.get_mut(ridx) {
+                                            r.color[2] = v;
+                                        }
                                     }
                                 }
                             }
@@ -1185,7 +1330,9 @@ fn wire_lcd_callbacks(
             std::thread::spawn(move || {
                 let is_sensor = {
                     let state = shared2.lock().unwrap();
-                    state.config.as_ref()
+                    state
+                        .config
+                        .as_ref()
                         .and_then(|c| c.lcds.get(idx))
                         .map(|lcd| lcd.media_type == lianli_shared::media::MediaType::Sensor)
                         .unwrap_or(false)
@@ -1196,7 +1343,9 @@ fn wire_lcd_callbacks(
                 } else {
                     dialog.add_filter(
                         "Media",
-                        &["jpg", "jpeg", "png", "bmp", "gif", "mp4", "avi", "mkv", "webm"],
+                        &[
+                            "jpg", "jpeg", "png", "bmp", "gif", "mp4", "avi", "mkv", "webm",
+                        ],
                     )
                 };
                 let file = dialog.pick_file();
@@ -1252,7 +1401,11 @@ fn refresh_lcd_ui(weak: &slint::Weak<MainWindow>, shared: &Shared) {
     let (lcds, devices, sensors) = {
         let state = shared.lock().unwrap();
         match state.config.as_ref() {
-            Some(c) => (c.lcds.clone(), state.devices.clone(), state.available_sensors.clone()),
+            Some(c) => (
+                c.lcds.clone(),
+                state.devices.clone(),
+                state.available_sensors.clone(),
+            ),
             None => return,
         }
     };
@@ -1271,9 +1424,7 @@ fn default_sensor() -> lianli_shared::media::SensorDescriptor {
     lianli_shared::media::SensorDescriptor {
         label: "CPU".to_string(),
         unit: "\u{00B0}C".to_string(),
-        source: lianli_shared::media::SensorSourceConfig::Command {
-            cmd: String::new(),
-        },
+        source: lianli_shared::media::SensorSourceConfig::Command { cmd: String::new() },
         text_color: [255, 255, 255],
         background_color: [0, 0, 0],
         gauge_background_color: [40, 40, 40],
@@ -1361,9 +1512,18 @@ fn device_group_zone_count(shared: &Shared, dev_id: &str) -> Option<usize> {
     let state = shared.lock().unwrap();
     let cap = state.rgb_caps.iter().find(|c| c.device_id == dev_id)?;
     let has_group = cap.supported_scopes.iter().any(|scopes| {
-        scopes.iter().any(|s| matches!(s, RgbScope::Top | RgbScope::Bottom | RgbScope::Inner | RgbScope::Outer))
+        scopes.iter().any(|s| {
+            matches!(
+                s,
+                RgbScope::Top | RgbScope::Bottom | RgbScope::Inner | RgbScope::Outer
+            )
+        })
     });
-    if has_group { Some(cap.zones.len()) } else { None }
+    if has_group {
+        Some(cap.zones.len())
+    } else {
+        None
+    }
 }
 
 /// Send RGB effect IPC, broadcasting to all zones only for animated (synced) modes.
@@ -1375,8 +1535,10 @@ fn send_rgb_effect(
     zone: u8,
     effect: &RgbEffect,
 ) {
-    let is_per_fan = matches!(effect.mode, RgbMode::Off | RgbMode::Static | RgbMode::Direct)
-        && matches!(effect.scope, RgbScope::All);
+    let is_per_fan = matches!(
+        effect.mode,
+        RgbMode::Off | RgbMode::Static | RgbMode::Direct
+    ) && matches!(effect.scope, RgbScope::All);
 
     let zones_to_update: Vec<u8> = if zone == 0 && !is_per_fan {
         if let Some(zone_count) = device_group_zone_count(shared, dev_id) {
@@ -1422,7 +1584,10 @@ fn get_or_create_device_config<'a>(
             zones: vec![],
         });
     }
-    rgb.devices.iter_mut().find(|d| d.device_id == dev_id).unwrap()
+    rgb.devices
+        .iter_mut()
+        .find(|d| d.device_id == dev_id)
+        .unwrap()
 }
 
 fn get_or_create_zone_config(dev: &mut RgbDeviceConfig, zone: u8) -> &mut RgbZoneConfig {

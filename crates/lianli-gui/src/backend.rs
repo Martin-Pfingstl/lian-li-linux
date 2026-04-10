@@ -1,7 +1,7 @@
 //! Background thread: polls daemon, dispatches IPC commands, pushes state to UI.
 
-use crate::ipc_client;
 use crate::conversions;
+use crate::ipc_client;
 use lianli_shared::config::AppConfig;
 use lianli_shared::ipc::{DeviceInfo, IpcRequest, TelemetrySnapshot};
 use lianli_shared::rgb::RgbDeviceCapabilities;
@@ -31,10 +31,7 @@ impl BackendHandle {
 }
 
 /// Start the backend thread. Returns a handle for sending commands.
-pub fn start(
-    window: slint::Weak<crate::MainWindow>,
-    shared: crate::Shared,
-) -> BackendHandle {
+pub fn start(window: slint::Weak<crate::MainWindow>, shared: crate::Shared) -> BackendHandle {
     let (tx, rx) = mpsc::channel::<BackendCommand>();
 
     std::thread::spawn(move || {
@@ -51,10 +48,12 @@ const DEBOUNCE_MS: u64 = 50;
 /// Requests with the same key replace each other — only the latest is sent.
 fn debounce_key(req: &IpcRequest) -> Option<String> {
     match req {
-        IpcRequest::SetRgbEffect { device_id, zone, .. } => Some(format!("rgb:{device_id}:{zone}")),
-        IpcRequest::SetFanDirection { device_id, zone, .. } => {
-            Some(format!("dir:{device_id}:{zone}"))
-        }
+        IpcRequest::SetRgbEffect {
+            device_id, zone, ..
+        } => Some(format!("rgb:{device_id}:{zone}")),
+        IpcRequest::SetFanDirection {
+            device_id, zone, ..
+        } => Some(format!("dir:{device_id}:{zone}")),
         _ => None,
     }
 }
@@ -189,11 +188,16 @@ fn poll_daemon(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
     // Update shared state devices
     shared.lock().unwrap().devices = devices.clone();
 
-    let device_count = devices.iter().filter(|d| !matches!(
-        d.family,
-        lianli_shared::device_id::DeviceFamily::WirelessTx
-        | lianli_shared::device_id::DeviceFamily::WirelessRx
-    )).count() as i32;
+    let device_count = devices
+        .iter()
+        .filter(|d| {
+            !matches!(
+                d.family,
+                lianli_shared::device_id::DeviceFamily::WirelessTx
+                    | lianli_shared::device_id::DeviceFamily::WirelessRx
+            )
+        })
+        .count() as i32;
 
     let streaming_active = telemetry.streaming_active;
     let openrgb_running = telemetry.openrgb_status.running;
@@ -253,7 +257,9 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
         let rgb = config.rgb.clone().unwrap_or_default();
         let openrgb_enabled = rgb.openrgb_server;
         let openrgb_port = rgb.openrgb_port as i32;
-        let fan_update_interval = config.fans.as_ref()
+        let fan_update_interval = config
+            .fans
+            .as_ref()
             .map(|f| f.update_interval_ms as i32)
             .unwrap_or(500);
         let hid_driver = match config.hid_driver {

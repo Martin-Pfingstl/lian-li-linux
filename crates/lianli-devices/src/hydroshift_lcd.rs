@@ -207,7 +207,11 @@ impl HydroShiftLcdController {
 
     /// Perform handshake to read RPM and temperature.
     pub fn handshake(&mut self) -> Result<AioHandshake> {
-        let timeout = if self.initialized { READ_TIMEOUT_MS } else { INIT_READ_TIMEOUT_MS };
+        let timeout = if self.initialized {
+            READ_TIMEOUT_MS
+        } else {
+            INIT_READ_TIMEOUT_MS
+        };
         let resp = self.send_a_command(CMD_HANDSHAKE, &[], timeout)?;
         let data = &resp[A_HEADER_LEN..];
         let data_len = resp[5] as usize;
@@ -284,7 +288,10 @@ impl HydroShiftLcdController {
             .read_timeout(&mut buf, timeout_ms)
             .context("AIO LCD: read firmware")?;
 
-        debug!("firmware response: {n} bytes, raw={:02x?}", &buf[..n.min(20)]);
+        debug!(
+            "firmware response: {n} bytes, raw={:02x?}",
+            &buf[..n.min(20)]
+        );
 
         if n == 0 {
             bail!("AIO LCD: no firmware response (timeout after {timeout_ms}ms)");
@@ -307,14 +314,20 @@ impl HydroShiftLcdController {
 
         let dev = self.device.lock();
         let written = dev.write(&pkt).context("AIO LCD: write A-command")?;
-        debug!("A-cmd {cmd:#04x}: wrote {written} bytes, payload={:02x?}", &data[..copy_len]);
+        debug!(
+            "A-cmd {cmd:#04x}: wrote {written} bytes, payload={:02x?}",
+            &data[..copy_len]
+        );
 
         let mut buf = [0u8; A_PACKET_SIZE];
         let n = dev
             .read_timeout(&mut buf, timeout_ms)
             .context("AIO LCD: read A-response")?;
 
-        debug!("A-cmd {cmd:#04x}: response {n} bytes, raw={:02x?}", &buf[..n.min(20)]);
+        debug!(
+            "A-cmd {cmd:#04x}: response {n} bytes, raw={:02x?}",
+            &buf[..n.min(20)]
+        );
 
         if n == 0 {
             bail!("AIO LCD: no response to A-command {cmd:#04x} (timeout after {timeout_ms}ms)");
@@ -536,7 +549,9 @@ fn build_lcd_packet(
 fn parse_firmware_version(fw: &str) -> Option<(u32, u32)> {
     // Split by comma and check segments from the end for "X.Y" patterns
     for segment in fw.rsplit(',') {
-        let s = segment.trim().trim_start_matches(|c: char| !c.is_ascii_digit());
+        let s = segment
+            .trim()
+            .trim_start_matches(|c: char| !c.is_ascii_digit());
         let mut parts = s.split('.');
         if let (Some(maj_s), Some(min_s)) = (parts.next(), parts.next()) {
             if let (Ok(major), Ok(minor)) = (maj_s.parse::<u32>(), min_s.parse::<u32>()) {
@@ -561,10 +576,7 @@ impl AioLcdRgbController {
         let variant = AioLcdVariant::from_pid(pid)
             .ok_or_else(|| anyhow::anyhow!("Unknown AIO LCD PID: {pid:#06x}"))?;
         info!("Opened {} RGB controller", variant.name());
-        Ok(Self {
-            device,
-            variant,
-        })
+        Ok(Self { device, variant })
     }
 
     fn set_pump_light(&self, effect: &RgbEffect, source_mcu: bool) -> Result<()> {
@@ -593,7 +605,12 @@ impl AioLcdRgbController {
         Ok(())
     }
 
-    fn set_fan_light(&self, effect: &RgbEffect, source_mcu: bool, sync_to_pump: bool) -> Result<()> {
+    fn set_fan_light(
+        &self,
+        effect: &RgbEffect,
+        source_mcu: bool,
+        sync_to_pump: bool,
+    ) -> Result<()> {
         let mode_byte = effect.mode.to_tl_mode_byte().unwrap_or(3);
         let mut payload = [0u8; 20];
         payload[0] = mode_byte;
@@ -670,13 +687,20 @@ impl RgbDevice for AioLcdRgbController {
     fn zone_info(&self) -> Vec<RgbZoneInfo> {
         if self.variant.has_pump_rgb() {
             vec![
-                RgbZoneInfo { name: "Pump Head".to_string(), led_count: 24 },
-                RgbZoneInfo { name: "Fans".to_string(), led_count: FAN_LED_COUNT },
+                RgbZoneInfo {
+                    name: "Pump Head".to_string(),
+                    led_count: 24,
+                },
+                RgbZoneInfo {
+                    name: "Fans".to_string(),
+                    led_count: FAN_LED_COUNT,
+                },
             ]
         } else {
-            vec![
-                RgbZoneInfo { name: "Fans".to_string(), led_count: FAN_LED_COUNT },
-            ]
+            vec![RgbZoneInfo {
+                name: "Fans".to_string(),
+                led_count: FAN_LED_COUNT,
+            }]
         }
     }
 
@@ -699,7 +723,7 @@ impl RgbDevice for AioLcdRgbController {
         if self.variant.has_pump_rgb() {
             vec![
                 vec![RgbScope::All, RgbScope::Inner, RgbScope::Outer], // Pump Head
-                vec![],                                                 // Fans
+                vec![],                                                // Fans
             ]
         } else {
             vec![]

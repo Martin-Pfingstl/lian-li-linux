@@ -14,10 +14,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, LazyLock};
 use std::thread;
 use tracing::{debug, error, info, warn};
-use std::sync::mpsc::Sender;
 
 pub static SOCKET_PATH: LazyLock<String> = LazyLock::new(|| {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
@@ -60,7 +60,11 @@ pub fn start_ipc_server(
     })
 }
 
-fn run_server(state: Arc<Mutex<DaemonState>>, stop_flag: Arc<AtomicBool>, tx: Sender<DaemonEvent>) -> anyhow::Result<()> {
+fn run_server(
+    state: Arc<Mutex<DaemonState>>,
+    stop_flag: Arc<AtomicBool>,
+    tx: Sender<DaemonEvent>,
+) -> anyhow::Result<()> {
     // Clean up stale socket
     let socket_path = Path::new(SOCKET_PATH.as_str());
     if socket_path.exists() {
@@ -154,7 +158,11 @@ fn handle_connection(
     Ok(())
 }
 
-fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Sender<DaemonEvent>) -> IpcResponse {
+fn handle_request(
+    request: IpcRequest,
+    state: &Arc<Mutex<DaemonState>>,
+    tx: Sender<DaemonEvent>,
+) -> IpcResponse {
     match request {
         IpcRequest::Ping => IpcResponse::ok(serde_json::json!("pong")),
 
@@ -163,7 +171,9 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
             // Add wireless coolant sensors from live telemetry
             let ipc_state = state.lock();
             for (device_id, temp) in &ipc_state.telemetry.coolant_temps {
-                let display = ipc_state.devices.iter()
+                let display = ipc_state
+                    .devices
+                    .iter()
                     .find(|d| d.device_id == *device_id)
                     .map(|d| format!("{} (Coolant)", d.name))
                     .unwrap_or_else(|| format!("{device_id} (Coolant)"));
@@ -216,7 +226,10 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
         IpcRequest::SetLcdMedia { device_id, config } => {
             let mut state = state.lock();
             let app_config = state.config.get_or_insert_with(AppConfig::default);
-            let found = app_config.lcds.iter_mut().find(|lcd| lcd.device_id() == device_id);
+            let found = app_config
+                .lcds
+                .iter_mut()
+                .find(|lcd| lcd.device_id() == device_id);
             match found {
                 Some(lcd) => {
                     *lcd = config;
@@ -320,7 +333,10 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
         } => {
             let state = state.lock();
             if let Some(ref rgb) = state.rgb_controller {
-                match rgb.lock().set_fan_direction(&device_id, zone, swap_lr, swap_tb) {
+                match rgb
+                    .lock()
+                    .set_fan_direction(&device_id, zone, swap_lr, swap_tb)
+                {
                     Ok(()) => IpcResponse::ok(serde_json::json!(null)),
                     Err(e) => IpcResponse::error(format!("Fan direction error: {e}")),
                 }
@@ -372,7 +388,7 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
                 }
                 Some(f) if f.supports_display_mode_switch() => {
                     // LCD -> Desktop: service loop owns the WinUSB transport
-                    tx.send(DaemonEvent::DisplaySwitch { device_id}).ok();
+                    tx.send(DaemonEvent::DisplaySwitch { device_id }).ok();
                     IpcResponse::ok(serde_json::json!({
                         "switched": "to_desktop",
                         "message": "Device is switching to desktop mode. It will reboot shortly."
@@ -384,7 +400,7 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
         }
 
         IpcRequest::BindWirelessDevice { mac } => {
-            tx.send(DaemonEvent::Bind {mac_address: mac}).ok();
+            tx.send(DaemonEvent::Bind { mac_address: mac }).ok();
             IpcResponse::ok(serde_json::json!({
                 "message": "Bind command queued. Device should appear shortly."
             }))
@@ -395,7 +411,6 @@ fn handle_request(request: IpcRequest, state: &Arc<Mutex<DaemonState>>, tx: Send
         }
     }
 }
-
 
 fn write_config(path: &Path, config: &AppConfig) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {

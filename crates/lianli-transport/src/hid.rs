@@ -59,11 +59,7 @@ impl HidTransport {
 }
 
 /// Enumerate HID devices matching a VID/PID.
-pub fn find_hid_devices(
-    api: &HidApi,
-    vid: u16,
-    pid: u16,
-) -> Vec<hidapi::DeviceInfo> {
+pub fn find_hid_devices(api: &HidApi, vid: u16, pid: u16) -> Vec<hidapi::DeviceInfo> {
     api.device_list()
         .filter(|info| info.vendor_id() == vid && info.product_id() == pid)
         .cloned()

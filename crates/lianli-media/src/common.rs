@@ -1,9 +1,8 @@
 use image::imageops::{rotate180, rotate270, rotate90};
 use image::RgbImage;
 use lianli_shared::screen::ScreenInfo;
-use thiserror::Error;
 use rusttype::{point, Font, Scale};
-
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum MediaError {
@@ -84,15 +83,14 @@ pub fn apply_orientation(image: RgbImage, orientation: f32) -> RgbImage {
     }
 }
 
-
 /// Calculates how much space the text needs
 /// Returns the width (tw) and height (th) of the space the text will need.
 /// Additionally it returns the offsetX (ox) and offsetY (oy): If you want to fit the text into a box starting at (x/y) and extending by (tw,th), then you need to draw the text at x-ox, y-oy
-/// 
+///
 /// But if you want the baseline of the text at box_y, you'll need to draw the text at y=box_y-ascent: So if you want to draw several characters each after another, you need to keep the baseline constant.
 /// If you draw a text at x/y, then the baseline will be at y+ascent. The topmost coord will be at y+oy and the bottommost coord will be y+oy+th-1. The text will NOT appear at x/y, as this coord is only the top left coord of the glyph (which in almost all cases starts with an offset).
 
-pub fn get_exact_text_metrics(font: &Font, text: &str, scale: Scale) -> (i32, i32, i32, i32,f32 ) {
+pub fn get_exact_text_metrics(font: &Font, text: &str, scale: Scale) -> (i32, i32, i32, i32, f32) {
     let glyphs: Vec<_> = font.layout(text, scale, point(0.0, 0.0)).collect();
 
     let mut min_x = i32::MAX;
@@ -130,9 +128,14 @@ pub fn get_exact_text_metrics(font: &Font, text: &str, scale: Scale) -> (i32, i3
 
     let v_metrics = font.v_metrics(scale);
 
-    (width, height, min_x, (v_metrics.ascent as i32) + min_y, v_metrics.ascent)
+    (
+        width,
+        height,
+        min_x,
+        (v_metrics.ascent as i32) + min_y,
+        v_metrics.ascent,
+    )
 }
-
 
 pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> [u8; 3] {
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;

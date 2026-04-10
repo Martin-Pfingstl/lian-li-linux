@@ -1,15 +1,15 @@
 pub mod common;
+pub mod cooler;
+pub mod doublegauge;
 pub mod image;
 pub mod sensor;
-pub mod doublegauge;
-pub mod cooler;
 pub mod video;
 
 pub use common::MediaError;
-use lianli_shared::sensors::{SensorInfo};
-pub use sensor::SensorAsset;
-pub use doublegauge::DoublegaugeAsset;
 pub use cooler::CoolerAsset;
+pub use doublegauge::DoublegaugeAsset;
+use lianli_shared::sensors::SensorInfo;
+pub use sensor::SensorAsset;
 
 use lianli_shared::config::{ConfigKey, LcdConfig};
 use lianli_shared::media::{MediaType, SensorSourceConfig};
@@ -18,7 +18,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
-
 
 #[derive(Debug, Clone)]
 pub struct MediaAsset {
@@ -70,21 +69,27 @@ pub fn prepare_media_asset(
 ) -> Result<MediaAssetKind, MediaError> {
     match cfg.media_type {
         MediaType::Image => {
-            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig("image entry requires a 'path' field".into()))?;
+            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig(
+                "image entry requires a 'path' field".into(),
+            ))?;
             let frame = image::load_image_frame(path, cfg.orientation, screen)?;
             Ok(MediaAssetKind::Static {
                 frame: Arc::new(frame),
             })
         }
         MediaType::Color => {
-            let rgb = cfg.rgb.ok_or(MediaError::InvalidConfig("color entry requires an 'rgb' field".into()))?;
+            let rgb = cfg.rgb.ok_or(MediaError::InvalidConfig(
+                "color entry requires an 'rgb' field".into(),
+            ))?;
             let frame = image::build_color_frame(rgb, screen);
             Ok(MediaAssetKind::Static {
                 frame: Arc::new(frame),
             })
         }
         MediaType::Video | MediaType::Gif if h264 => {
-            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig("video/gif entry requires a 'path' field".into()))?;
+            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig(
+                "video/gif entry requires a 'path' field".into(),
+            ))?;
             let fps = cfg.fps.unwrap_or(default_fps).max(1.0);
             let (h264_path, temp) = video::encode_h264(path, fps, cfg.orientation, screen)?;
             Ok(MediaAssetKind::H264Stream {
@@ -98,7 +103,9 @@ pub fn prepare_media_asset(
             if desired_fps <= 0.0 {
                 return Err(MediaError::InvalidFps);
             }
-            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig("video entry requires a 'path' field".into()))?;
+            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig(
+                "video entry requires a 'path' field".into(),
+            ))?;
             let (frames, durations) =
                 video::build_video_frames(path, desired_fps, cfg.orientation, screen)?;
             Ok(MediaAssetKind::Video {
@@ -107,7 +114,9 @@ pub fn prepare_media_asset(
             })
         }
         MediaType::Gif => {
-            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig("gif entry requires a 'path' field".into()))?;
+            let path = cfg.path.as_ref().ok_or(MediaError::InvalidConfig(
+                "gif entry requires a 'path' field".into(),
+            ))?;
             let (frames, durations) = video::build_gif_frames(path, cfg.orientation, screen)?;
             Ok(MediaAssetKind::Video {
                 frames: Arc::new(frames),
@@ -115,9 +124,12 @@ pub fn prepare_media_asset(
             })
         }
         MediaType::Sensor => {
-            let descriptor = cfg.sensor.as_ref().ok_or(MediaError::InvalidConfig("sensor entry requires a 'sensor' field".into()))?;
+            let descriptor = cfg.sensor.as_ref().ok_or(MediaError::InvalidConfig(
+                "sensor entry requires a 'sensor' field".into(),
+            ))?;
             let bg_path = cfg.path.as_deref();
-            let asset = SensorAsset::new(descriptor, cfg.orientation, screen, all_sensors, bg_path)?;
+            let asset =
+                SensorAsset::new(descriptor, cfg.orientation, screen, all_sensors, bg_path)?;
             Ok(MediaAssetKind::Sensor { asset })
         }
         MediaType::Doublegauge => {
@@ -134,19 +146,15 @@ pub fn prepare_media_asset(
         }
         MediaType::Cooler => {
             let descriptor = cfg.doublegauge.as_ref().ok_or_else(|| {
-                MediaError::InvalidConfig(
-                    "cooler entry requires a 'doublegauge' section".into(),
-                )
+                MediaError::InvalidConfig("cooler entry requires a 'doublegauge' section".into())
             })?;
             let source_1 = resolve_sensor_config(&cfg.sensor_source_1, all_sensors)?;
             let source_2 = resolve_sensor_config(&cfg.sensor_source_2, all_sensors)?;
-            let asset =
-                CoolerAsset::new(descriptor, cfg.orientation, screen, source_1, source_2)?;
+            let asset = CoolerAsset::new(descriptor, cfg.orientation, screen, source_1, source_2)?;
             Ok(MediaAssetKind::Cooler { asset })
         }
     }
 }
-
 
 fn resolve_sensor_config(
     cfg_source: &SensorSourceConfig,

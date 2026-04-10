@@ -12,8 +12,8 @@
 
 use super::common::MediaError;
 use super::common::{apply_orientation, encode_jpeg, get_exact_text_metrics, FONT_DATA};
-use image::{imageops, DynamicImage, ImageBuffer, Pixel, Rgb, RgbImage, Rgba, RgbaImage};
 use crate::sensor::FrameInfo;
+use image::{imageops, DynamicImage, ImageBuffer, Pixel, Rgb, RgbImage, Rgba, RgbaImage};
 use imageproc::drawing::draw_polygon_mut;
 use imageproc::drawing::draw_text_mut;
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
@@ -611,7 +611,6 @@ impl DoublegaugeAsset {
             }
         }
     }
-
 }
 
 /// Linearly map `value` from [min, max] to a unit interval (typically [0, 1] but

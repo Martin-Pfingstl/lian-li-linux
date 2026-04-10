@@ -111,42 +111,40 @@ fn main() {
     println!("\n[2] Trying rusb detach kernel driver, then hidapi::open...");
     if let Some(usb_dev) = find_usb_device() {
         match usb_dev.open() {
-            Ok(handle) => {
-                match handle.kernel_driver_active(iface_num) {
-                    Ok(true) => {
-                        println!("    Kernel driver IS active on interface {iface_num}");
-                        match handle.detach_kernel_driver(iface_num) {
-                            Ok(()) => {
-                                println!("    Detached kernel driver successfully");
+            Ok(handle) => match handle.kernel_driver_active(iface_num) {
+                Ok(true) => {
+                    println!("    Kernel driver IS active on interface {iface_num}");
+                    match handle.detach_kernel_driver(iface_num) {
+                        Ok(()) => {
+                            println!("    Detached kernel driver successfully");
 
-                                println!("    Retrying hidapi::open({vid:04x}, {pid:04x})...");
-                                match hidapi::HidApi::new() {
-                                    Ok(api) => match api.open(vid, pid) {
-                                        Ok(dev) => {
-                                            println!("    SUCCESS: hidapi opened after detach!");
-                                            drop(dev);
-                                        }
-                                        Err(e) => println!("    FAILED: {e}"),
-                                    },
-                                    Err(e) => println!("    hidapi init failed: {e}"),
-                                }
-
-                                let _ = handle.attach_kernel_driver(iface_num);
-                                println!("    Re-attached kernel driver");
+                            println!("    Retrying hidapi::open({vid:04x}, {pid:04x})...");
+                            match hidapi::HidApi::new() {
+                                Ok(api) => match api.open(vid, pid) {
+                                    Ok(dev) => {
+                                        println!("    SUCCESS: hidapi opened after detach!");
+                                        drop(dev);
+                                    }
+                                    Err(e) => println!("    FAILED: {e}"),
+                                },
+                                Err(e) => println!("    hidapi init failed: {e}"),
                             }
-                            Err(e) => println!("    Failed to detach: {e}"),
+
+                            let _ = handle.attach_kernel_driver(iface_num);
+                            println!("    Re-attached kernel driver");
                         }
+                        Err(e) => println!("    Failed to detach: {e}"),
                     }
-                    Ok(false) => {
-                        println!("    Kernel driver NOT active on interface {iface_num}");
-                        println!("    (hidapi should work without detaching)");
-                    }
-                    Err(rusb::Error::NotSupported) => {
-                        println!("    kernel_driver_active not supported on this platform");
-                    }
-                    Err(e) => println!("    Error checking kernel driver: {e}"),
                 }
-            }
+                Ok(false) => {
+                    println!("    Kernel driver NOT active on interface {iface_num}");
+                    println!("    (hidapi should work without detaching)");
+                }
+                Err(rusb::Error::NotSupported) => {
+                    println!("    kernel_driver_active not supported on this platform");
+                }
+                Err(e) => println!("    Error checking kernel driver: {e}"),
+            },
             Err(e) => println!("    Failed to open USB device: {e}"),
         }
     } else {

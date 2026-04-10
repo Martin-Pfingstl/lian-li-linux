@@ -1,14 +1,14 @@
 use super::common::{apply_orientation, encode_jpeg, render_dimensions, MediaError};
+use image::{ImageBuffer, Rgb, RgbImage};
 use lianli_shared::media::{SensorDescriptor, SensorRange, SensorSourceConfig};
 use lianli_shared::screen::ScreenInfo;
-use image::{ImageBuffer, Rgb, RgbImage};
 use lianli_shared::sensors::SensorInfo;
+use parking_lot::Mutex;
 use rusttype::{point, Font, Scale};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
-use parking_lot::Mutex;
 
 pub struct FrameInfo {
     pub data: Vec<u8>,
@@ -59,13 +59,24 @@ impl SensorAsset {
         let mut ranges = descriptor.gauge_ranges.clone();
         if ranges.is_empty() {
             ranges = vec![
-                SensorRange { max: Some(50.0), color: [0, 200, 0] },
-                SensorRange { max: Some(80.0), color: [220, 140, 0] },
-                SensorRange { max: None, color: [220, 0, 0] },
+                SensorRange {
+                    max: Some(50.0),
+                    color: [0, 200, 0],
+                },
+                SensorRange {
+                    max: Some(80.0),
+                    color: [220, 140, 0],
+                },
+                SensorRange {
+                    max: None,
+                    color: [220, 0, 0],
+                },
             ];
         }
         ranges.sort_by(|a, b| match (a.max, b.max) {
-            (Some(a_val), Some(b_val)) => a_val.partial_cmp(&b_val).unwrap_or(std::cmp::Ordering::Equal),
+            (Some(a_val), Some(b_val)) => a_val
+                .partial_cmp(&b_val)
+                .unwrap_or(std::cmp::Ordering::Equal),
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
             (None, None) => std::cmp::Ordering::Equal,
@@ -75,31 +86,37 @@ impl SensorAsset {
 
         let template_image: Option<Arc<RgbImage>> = background_image
             .filter(|path| !path.as_os_str().is_empty())
-            .and_then(|path| {
-                match ::image::open(path) {
-                    Ok(img) => {
-                        let resized = img
-                            .resize_exact(rw, rh, ::image::imageops::FilterType::Lanczos3)
-                            .to_rgb8();
-                        Some(Arc::new(resized))
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to load sensor background image '{}': {e}", path.display());
-                        None
-                    }
+            .and_then(|path| match ::image::open(path) {
+                Ok(img) => {
+                    let resized = img
+                        .resize_exact(rw, rh, ::image::imageops::FilterType::Lanczos3)
+                        .to_rgb8();
+                    Some(Arc::new(resized))
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Failed to load sensor background image '{}': {e}",
+                        path.display()
+                    );
+                    None
                 }
             });
 
         if ranges.last().and_then(|r| r.max).is_some() {
             if let Some(last) = ranges.last().cloned() {
-                ranges.push(SensorRange { max: None, color: last.color });
+                ranges.push(SensorRange {
+                    max: None,
+                    color: last.color,
+                });
             }
         }
 
         let ranges = ranges.into_iter().map(|r| (r.max, r.color)).collect();
 
         let source = match &descriptor.source {
-            SensorSourceConfig::Constant { value } => SensorSource::Constant(value.clamp(0.0, 100.0)),
+            SensorSourceConfig::Constant { value } => {
+                SensorSource::Constant(value.clamp(0.0, 100.0))
+            }
             SensorSourceConfig::Command { .. }
             | SensorSourceConfig::Hwmon { .. }
             | SensorSourceConfig::NvidiaGpu { .. }
@@ -131,7 +148,9 @@ impl SensorAsset {
         let update_interval = Duration::from_millis(descriptor.update_interval_ms.max(100));
         let max_radius = (rw.min(rh) as f32 / 2.0) - 6.0;
         let gauge_outer_radius = descriptor.gauge_outer_radius.clamp(20.0, max_radius);
-        let gauge_thickness = descriptor.gauge_thickness.clamp(5.0, gauge_outer_radius - 5.0);
+        let gauge_thickness = descriptor
+            .gauge_thickness
+            .clamp(5.0, gauge_outer_radius - 5.0);
         let gauge_start_angle = (descriptor.gauge_start_angle % 360.0 + 360.0) % 360.0;
         let gauge_sweep_angle = descriptor.gauge_sweep_angle.clamp(10.0, 360.0);
         let bar_corner_radius = descriptor.bar_corner_radius.max(0.0);
@@ -175,7 +194,6 @@ impl SensorAsset {
     /// Force flag: if true, frame gets rendered even if value has not changed. For example when we render the first frame, we set force=true
     /// Returns OK(Empty) in case of "nothing changed", OK(FrameInfo) in case a new frame has been rendered, and Error in case of an error
     pub fn render_frame(&self, force: bool) -> Result<Option<FrameInfo>, MediaError> {
-
         // First of all, let's check whether we need to render a new frame:
         // if the value to display has not changed, we omit frame rendering
 
@@ -190,7 +208,7 @@ impl SensorAsset {
 
         // And let's compare it with the previously stored value
         let mut prev = self.previous_value.lock();
-        if value_text == *prev  && !force {
+        if value_text == *prev && !force {
             return Ok(None);
         }
 
@@ -241,7 +259,8 @@ impl SensorAsset {
         *prev = value_text; // set the previous value
 
         let oriented = apply_orientation(image, self.orientation);
-        let encoded_jpeg_result: Result<Option<Vec<u8>>, MediaError> = encode_jpeg(oriented, &self.screen).map(Some);
+        let encoded_jpeg_result: Result<Option<Vec<u8>>, MediaError> =
+            encode_jpeg(oriented, &self.screen).map(Some);
 
         let frame_result: Result<Option<FrameInfo>, MediaError> = encoded_jpeg_result.map(|opt| {
             opt.map(|data| FrameInfo {
@@ -255,11 +274,17 @@ impl SensorAsset {
     pub fn blank_frame(&self) -> FrameInfo {
         let image = match &self.template_image {
             Some(tpl) => (**tpl).clone(),
-            None => ImageBuffer::from_pixel(self.render_width, self.render_height, Rgb(self.background_color)),
+            None => ImageBuffer::from_pixel(
+                self.render_width,
+                self.render_height,
+                Rgb(self.background_color),
+            ),
         };
         let oriented = apply_orientation(image, self.orientation);
-        let frame_ret = FrameInfo{data: encode_jpeg(oriented, &self.screen).unwrap_or_default(), 
-                        frame_index: self.frame_index.fetch_add(1, Ordering::SeqCst) };
+        let frame_ret = FrameInfo {
+            data: encode_jpeg(oriented, &self.screen).unwrap_or_default(),
+            frame_index: self.frame_index.fetch_add(1, Ordering::SeqCst),
+        };
 
         return frame_ret;
     }
@@ -276,10 +301,8 @@ impl SensorAsset {
     fn read_value(&self) -> Result<f32, MediaError> {
         match &self.source {
             SensorSource::Constant(value) => Ok(*value),
-            SensorSource::Resolved(resolved) => {
-                lianli_shared::sensors::read_sensor_value(resolved)
-                    .map_err(|e| MediaError::Sensor(e.to_string()))
-            }
+            SensorSource::Resolved(resolved) => lianli_shared::sensors::read_sensor_value(resolved)
+                .map_err(|e| MediaError::Sensor(e.to_string())),
         }
     }
 }
@@ -303,8 +326,14 @@ struct GaugeParams {
 
 fn draw_gauge(image: &mut RgbImage, width: u32, height: u32, params: GaugeParams) {
     let GaugeParams {
-        value, gauge_color, ring_color, outer_radius, thickness,
-        start_angle, sweep_angle, corner_radius,
+        value,
+        gauge_color,
+        ring_color,
+        outer_radius,
+        thickness,
+        start_angle,
+        sweep_angle,
+        corner_radius,
     } = params;
     let cx = (width as f32 - 1.0) / 2.0;
     let cy = (height as f32 - 1.0) / 2.0;
@@ -371,9 +400,15 @@ fn draw_gauge(image: &mut RgbImage, width: u32, height: u32, params: GaugeParams
                                     } else if corner_dist > corner_radius - 1.0 {
                                         let alpha = (corner_radius - corner_dist).clamp(0.0, 1.0);
                                         let blended = [
-                                            (base_color[0] as f32 * alpha + ring_color[0] as f32 * (1.0 - alpha)) as u8,
-                                            (base_color[1] as f32 * alpha + ring_color[1] as f32 * (1.0 - alpha)) as u8,
-                                            (base_color[2] as f32 * alpha + ring_color[2] as f32 * (1.0 - alpha)) as u8,
+                                            (base_color[0] as f32 * alpha
+                                                + ring_color[0] as f32 * (1.0 - alpha))
+                                                as u8,
+                                            (base_color[1] as f32 * alpha
+                                                + ring_color[1] as f32 * (1.0 - alpha))
+                                                as u8,
+                                            (base_color[2] as f32 * alpha
+                                                + ring_color[2] as f32 * (1.0 - alpha))
+                                                as u8,
                                         ];
                                         image.put_pixel(x, y, Rgb(blended));
                                         continue;
@@ -410,9 +445,36 @@ fn draw_sensor_text_ttf(
     params: TextRenderParams,
     font: &Font,
 ) {
-    draw_text_centered(image, width, height, params.value_text, params.value_size, params.color, params.value_offset, font);
-    draw_text_centered(image, width, height, params.unit, params.unit_size, params.color, params.unit_offset, font);
-    draw_text_centered(image, width, height, params.label, params.label_size, params.color, params.label_offset, font);
+    draw_text_centered(
+        image,
+        width,
+        height,
+        params.value_text,
+        params.value_size,
+        params.color,
+        params.value_offset,
+        font,
+    );
+    draw_text_centered(
+        image,
+        width,
+        height,
+        params.unit,
+        params.unit_size,
+        params.color,
+        params.unit_offset,
+        font,
+    );
+    draw_text_centered(
+        image,
+        width,
+        height,
+        params.label,
+        params.label_size,
+        params.color,
+        params.label_offset,
+        font,
+    );
 }
 
 fn draw_text_centered(
@@ -476,9 +538,33 @@ fn draw_sensor_text_fallback(
     let unit_scale = (params.unit_size / 4.0).max(3.0) as u32;
     let label_scale = (params.label_size / 4.0).max(3.0) as u32;
 
-    draw_text_center_bitmap(image, width, height, params.value_text, value_scale, params.color, params.value_offset);
-    draw_text_center_bitmap(image, width, height, params.unit, unit_scale, params.color, params.unit_offset);
-    draw_text_center_bitmap(image, width, height, params.label, label_scale, params.color, params.label_offset);
+    draw_text_center_bitmap(
+        image,
+        width,
+        height,
+        params.value_text,
+        value_scale,
+        params.color,
+        params.value_offset,
+    );
+    draw_text_center_bitmap(
+        image,
+        width,
+        height,
+        params.unit,
+        unit_scale,
+        params.color,
+        params.unit_offset,
+    );
+    draw_text_center_bitmap(
+        image,
+        width,
+        height,
+        params.label,
+        label_scale,
+        params.color,
+        params.label_offset,
+    );
 }
 
 fn draw_text_center_bitmap(
@@ -538,49 +624,137 @@ fn draw_bitmap_character(
 
 fn glyph_pattern(ch: char) -> [u8; 7] {
     match ch.to_ascii_uppercase() {
-        '0' => [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
-        '1' => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        '2' => [0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111],
-        '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
-        '4' => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-        '5' => [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
-        '6' => [0b01110, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b01110],
-        '7' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-        '8' => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-        '9' => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
-        'A' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-        'B' => [0b11110, 0b10001, 0b11110, 0b10001, 0b10001, 0b10001, 0b11110],
-        'C' => [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
-        'D' => [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
-        'E' => [0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000, 0b11111],
-        'F' => [0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000, 0b10000],
-        'G' => [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111],
-        'H' => [0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001, 0b10001],
-        'I' => [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        'J' => [0b00001, 0b00001, 0b00001, 0b00001, 0b10001, 0b10001, 0b01110],
-        'K' => [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-        'L' => [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
-        'M' => [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
-        'N' => [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
-        'O' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'P' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
-        'Q' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
-        'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-        'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-        'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'V' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
-        'W' => [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010],
-        'X' => [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
-        'Y' => [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
-        'Z' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
-        '%' => [0b11001, 0b11010, 0b00100, 0b01000, 0b10011, 0b01011, 0b00000],
-        '°' => [0b01100, 0b10010, 0b10010, 0b01100, 0b00000, 0b00000, 0b00000],
-        '-' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
-        '_' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111],
-        ':' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000],
-        '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100],
-        ' ' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
-        _ => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+        '0' => [
+            0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
+        ],
+        '1' => [
+            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        '2' => [
+            0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111,
+        ],
+        '3' => [
+            0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        '4' => [
+            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
+        ],
+        '5' => [
+            0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110,
+        ],
+        '6' => [
+            0b01110, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        '7' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        '8' => [
+            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+        ],
+        '9' => [
+            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100,
+        ],
+        'A' => [
+            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'B' => [
+            0b11110, 0b10001, 0b11110, 0b10001, 0b10001, 0b10001, 0b11110,
+        ],
+        'C' => [
+            0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
+        ],
+        'D' => [
+            0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110,
+        ],
+        'E' => [
+            0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'F' => [
+            0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000, 0b10000,
+        ],
+        'G' => [
+            0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111,
+        ],
+        'H' => [
+            0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001, 0b10001,
+        ],
+        'I' => [
+            0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        'J' => [
+            0b00001, 0b00001, 0b00001, 0b00001, 0b10001, 0b10001, 0b01110,
+        ],
+        'K' => [
+            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
+        ],
+        'L' => [
+            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'M' => [
+            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+        ],
+        'N' => [
+            0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
+        ],
+        'O' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'P' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'Q' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101,
+        ],
+        'R' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+        ],
+        'S' => [
+            0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        'T' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'U' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'V' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+        ],
+        'W' => [
+            0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010,
+        ],
+        'X' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
+        ],
+        'Y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'Z' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111,
+        ],
+        '%' => [
+            0b11001, 0b11010, 0b00100, 0b01000, 0b10011, 0b01011, 0b00000,
+        ],
+        '°' => [
+            0b01100, 0b10010, 0b10010, 0b01100, 0b00000, 0b00000, 0b00000,
+        ],
+        '-' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
+        '_' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111,
+        ],
+        ':' => [
+            0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000,
+        ],
+        '.' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100,
+        ],
+        ' ' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        _ => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
     }
 }

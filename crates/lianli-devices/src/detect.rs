@@ -1,6 +1,6 @@
 use anyhow::Result;
 use hidapi::HidApi;
-use lianli_shared::device_id::{uses_hid, DeviceFamily, KNOWN_DEVICES, UsbId};
+use lianli_shared::device_id::{uses_hid, DeviceFamily, UsbId, KNOWN_DEVICES};
 use lianli_transport::{HidBackend, RusbHidTransport};
 use parking_lot::Mutex;
 use rusb::{Device, GlobalContext};
@@ -134,7 +134,12 @@ pub fn enumerate_devices() -> Result<Vec<DetectedDevice>> {
 
             debug!(
                 "Found {} ({:04x}:{:04x}) at bus {} addr {} serial={}",
-                entry.name, vid, pid, bus, address, serial.as_deref().unwrap_or("none")
+                entry.name,
+                vid,
+                pid,
+                bus,
+                address,
+                serial.as_deref().unwrap_or("none")
             );
 
             found.push(DetectedDevice {
@@ -192,19 +197,14 @@ pub fn enumerate_hid_devices(api: &HidApi) -> Vec<DetectedHidDevice> {
                 // to avoid opening the wrong HID interface.
                 // (TL Fan uses usage_page filtering so this branch only
                 // applies to ENE and other devices with unique serials.)
-                let serial_str = dev_info
-                    .serial_number()
-                    .unwrap_or("")
-                    .to_string();
+                let serial_str = dev_info.serial_number().unwrap_or("").to_string();
                 let dedup_key = (vid, pid, serial_str);
                 if !seen.insert(dedup_key) {
                     continue;
                 }
             }
 
-            let serial = dev_info
-                .serial_number()
-                .map(|s| s.to_string());
+            let serial = dev_info.serial_number().map(|s| s.to_string());
 
             debug!(
                 "Found HID {} ({:04x}:{:04x}) usage_page={:#06x} path={:?} serial={:?}",
@@ -291,7 +291,9 @@ pub fn open_hid_lcd_by_vid_pid(
         } else if attempt < 3 {
             warn!(
                 "No hidraw node for {:04x}:{:04x} (attempt {}), resetting USB",
-                vid, pid, attempt + 1
+                vid,
+                pid,
+                attempt + 1
             );
         } else {
             return Err(anyhow::anyhow!(
@@ -398,10 +400,7 @@ fn open_with_retry<T>(
                 std::thread::sleep(Duration::from_secs(3));
             }
             Err(e) => {
-                return Err(e.context(format!(
-                    "failed after {} attempts",
-                    MAX_RETRIES + 1
-                )));
+                return Err(e.context(format!("failed after {} attempts", MAX_RETRIES + 1)));
             }
         }
     }
@@ -478,19 +477,14 @@ pub fn open_hid_backend_hidapi(
     api: &HidApi,
     det: &DetectedHidDevice,
 ) -> Result<Arc<Mutex<HidBackend>>> {
-    open_hidapi_with_retry(api, det, |backend| {
-        Ok(Arc::new(Mutex::new(backend)))
-    })
+    open_hidapi_with_retry(api, det, |backend| Ok(Arc::new(Mutex::new(backend))))
 }
 
 /// Open a shared HID backend via rusb with retry logic.
 /// Returns an `Arc<Mutex<HidBackend>>` that can be shared between multiple controllers.
-pub fn open_hid_backend_rusb(
-    det: &DetectedDevice,
-) -> Result<Arc<Mutex<HidBackend>>> {
+pub fn open_hid_backend_rusb(det: &DetectedDevice) -> Result<Arc<Mutex<HidBackend>>> {
     open_with_retry(&det.device, || {
-        let transport =
-            RusbHidTransport::open_by_usage(det.device.clone(), det.hid_usage_page)?;
+        let transport = RusbHidTransport::open_by_usage(det.device.clone(), det.hid_usage_page)?;
         Ok(Arc::new(Mutex::new(HidBackend::Rusb(transport))))
     })
 }
@@ -512,27 +506,25 @@ pub fn create_wired_controllers(
     backend: Arc<Mutex<HidBackend>>,
 ) -> Option<Result<WiredControllerSet>> {
     match family {
-        DeviceFamily::TlFan => Some(
-            crate::tl_fan::TlFanController::new(backend).map(|ctrl| {
-                let ctrl = Arc::new(ctrl);
-                let rgb: Vec<_> = ctrl
-                    .port_devices()
-                    .into_iter()
-                    .map(|(port, dev)| {
-                        (
-                            format!("port{port}"),
-                            Box::new(dev) as Box<dyn crate::traits::RgbDevice>,
-                        )
-                    })
-                    .collect();
-                WiredControllerSet {
-                    fan: Some(Box::new(ctrl)),
-                    rgb,
-                }
-            }),
-        ),
-        DeviceFamily::Ene6k77 => Some(
-            crate::ene6k77::Ene6k77Controller::new(backend, pid).map(|ctrl| {
+        DeviceFamily::TlFan => Some(crate::tl_fan::TlFanController::new(backend).map(|ctrl| {
+            let ctrl = Arc::new(ctrl);
+            let rgb: Vec<_> = ctrl
+                .port_devices()
+                .into_iter()
+                .map(|(port, dev)| {
+                    (
+                        format!("port{port}"),
+                        Box::new(dev) as Box<dyn crate::traits::RgbDevice>,
+                    )
+                })
+                .collect();
+            WiredControllerSet {
+                fan: Some(Box::new(ctrl)),
+                rgb,
+            }
+        })),
+        DeviceFamily::Ene6k77 => Some(crate::ene6k77::Ene6k77Controller::new(backend, pid).map(
+            |ctrl| {
                 let ctrl = Arc::new(ctrl);
                 let rgb: Vec<_> = ctrl
                     .group_devices()
@@ -548,14 +540,18 @@ pub fn create_wired_controllers(
                     fan: Some(Box::new(Arc::clone(&ctrl))),
                     rgb,
                 }
-            }),
-        ),
+            },
+        )),
         DeviceFamily::Galahad2Trinity => Some(
-            crate::galahad2_trinity::Galahad2TrinityController::new(backend, pid)
-                .map(|c| WiredControllerSet {
+            crate::galahad2_trinity::Galahad2TrinityController::new(backend, pid).map(|c| {
+                WiredControllerSet {
                     fan: None,
-                    rgb: vec![(String::new(), Box::new(c) as Box<dyn crate::traits::RgbDevice>)],
-                }),
+                    rgb: vec![(
+                        String::new(),
+                        Box::new(c) as Box<dyn crate::traits::RgbDevice>,
+                    )],
+                }
+            }),
         ),
         DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => Some(
             crate::hydroshift_lcd::HydroShiftLcdController::new(Arc::clone(&backend), pid)
@@ -563,7 +559,10 @@ pub fn create_wired_controllers(
                     let rgb_ctrl = crate::hydroshift_lcd::AioLcdRgbController::new(backend, pid)?;
                     Ok(WiredControllerSet {
                         fan: Some(Box::new(Arc::new(lcd_ctrl))),
-                        rgb: vec![(String::new(), Box::new(rgb_ctrl) as Box<dyn crate::traits::RgbDevice>)],
+                        rgb: vec![(
+                            String::new(),
+                            Box::new(rgb_ctrl) as Box<dyn crate::traits::RgbDevice>,
+                        )],
                     })
                 }),
         ),
@@ -578,9 +577,9 @@ pub fn create_hid_lcd_device(
     backend: Arc<Mutex<HidBackend>>,
 ) -> Option<Result<crate::hydroshift_lcd::HydroShiftLcdController>> {
     match family {
-        DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => {
-            Some(crate::hydroshift_lcd::HydroShiftLcdController::new(backend, pid))
-        }
+        DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => Some(
+            crate::hydroshift_lcd::HydroShiftLcdController::new(backend, pid),
+        ),
         _ => None,
     }
 }

@@ -92,10 +92,14 @@ impl Galahad2TrinityController {
     }
 
     fn initialize(&mut self) -> Result<()> {
-        info!("Initializing {} (PID={:#06x})", self.model.name(), match self.model {
-            Galahad2TrinityModel::Performance => 0x7371u16,
-            Galahad2TrinityModel::Regular => 0x7373u16,
-        });
+        info!(
+            "Initializing {} (PID={:#06x})",
+            self.model.name(),
+            match self.model {
+                Galahad2TrinityModel::Performance => 0x7371u16,
+                Galahad2TrinityModel::Regular => 0x7373u16,
+            }
+        );
 
         match self.read_firmware() {
             Ok(fw) => info!("  Firmware: {fw}"),
@@ -203,7 +207,12 @@ impl Galahad2TrinityController {
     /// [18] = sync to pump (0=independent, 1=sync)
     /// [19] = number of LEDs (default 24)
     /// ```
-    pub fn set_fan_light(&self, effect: &RgbEffect, source_mcu: bool, sync_to_pump: bool) -> Result<()> {
+    pub fn set_fan_light(
+        &self,
+        effect: &RgbEffect,
+        source_mcu: bool,
+        sync_to_pump: bool,
+    ) -> Result<()> {
         let mode_byte = effect.mode.to_tl_mode_byte().unwrap_or(3);
 
         let mut payload = [0u8; 20];
@@ -364,7 +373,7 @@ impl RgbDevice for Galahad2TrinityController {
     fn supported_scopes(&self) -> Vec<Vec<RgbScope>> {
         vec![
             vec![RgbScope::All, RgbScope::Inner, RgbScope::Outer], // Pump Head
-            vec![],                                                 // Fans (All only)
+            vec![],                                                // Fans (All only)
         ]
     }
 

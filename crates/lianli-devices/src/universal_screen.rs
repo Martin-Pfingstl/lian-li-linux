@@ -14,5 +14,9 @@ pub const PID: u16 = 0xA088;
 
 /// Open a Universal Screen 8.8" device.
 pub fn open(device: Device<GlobalContext>) -> Result<WinUsbLcdDevice> {
-    WinUsbLcdDevice::new(device, ScreenInfo::UNIVERSAL_SCREEN, "Universal Screen 8.8\"")
+    WinUsbLcdDevice::new(
+        device,
+        ScreenInfo::UNIVERSAL_SCREEN,
+        "Universal Screen 8.8\"",
+    )
 }

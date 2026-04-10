@@ -28,8 +28,7 @@ impl Slv3LcdDevice {
             .and_then(|h| h.read_serial_number_string_ascii(&desc))
             .unwrap_or_else(|_| format!("bus{bus}-addr{address}"));
 
-        let mut transport =
-            UsbTransport::open_device(device).context("opening LCD device")?;
+        let mut transport = UsbTransport::open_device(device).context("opening LCD device")?;
         transport
             .detach_and_configure("LCD")
             .context("configuring LCD device")?;

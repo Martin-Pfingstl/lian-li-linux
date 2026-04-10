@@ -109,7 +109,10 @@ impl RusbHidTransport {
         })?;
 
         if ep_out.is_some() {
-            debug!("RusbHid: interface={target_iface} ep_in=0x{ep_in:02x} ep_out=0x{:02x}", ep_out.unwrap());
+            debug!(
+                "RusbHid: interface={target_iface} ep_in=0x{ep_in:02x} ep_out=0x{:02x}",
+                ep_out.unwrap()
+            );
         } else {
             debug!("RusbHid: interface={target_iface} ep_in=0x{ep_in:02x} (using SET_REPORT for writes)");
         }
@@ -155,9 +158,9 @@ impl RusbHidTransport {
             }
         }
 
-        handle.reset().map_err(|e| {
-            TransportError::Other(format!("USB device reset failed: {e}"))
-        })?;
+        handle
+            .reset()
+            .map_err(|e| TransportError::Other(format!("USB device reset failed: {e}")))?;
 
         // Reattach kernel drivers so the kernel re-enumerates HID descriptors.
         for &iface in &hid_ifaces {

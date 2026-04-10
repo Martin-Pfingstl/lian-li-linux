@@ -129,12 +129,8 @@ fn run_server(
             Ok((stream, addr)) => {
                 info!("OpenRGB client connected from {addr}");
                 stream.set_nonblocking(false).ok();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(300)))
-                    .ok();
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(10)))
-                    .ok();
+                stream.set_read_timeout(Some(Duration::from_secs(300))).ok();
+                stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
                 let rgb = Arc::clone(&rgb);
                 let buf = Arc::clone(&direct_buffer);
@@ -262,12 +258,7 @@ impl ClientHandler {
         Ok(())
     }
 
-    fn handle_packet(
-        &mut self,
-        dev_idx: u32,
-        pkt_id: u32,
-        payload: &[u8],
-    ) -> anyhow::Result<()> {
+    fn handle_packet(&mut self, dev_idx: u32, pkt_id: u32, payload: &[u8]) -> anyhow::Result<()> {
         match pkt_id {
             PKT_REQUEST_PROTOCOL_VERSION => {
                 let client_version = if payload.len() >= 4 {
@@ -342,7 +333,10 @@ impl ClientHandler {
             }
 
             _ => {
-                debug!("OpenRGB unhandled packet: id={pkt_id} dev={dev_idx} size={}", payload.len());
+                debug!(
+                    "OpenRGB unhandled packet: id={pkt_id} dev={dev_idx} size={}",
+                    payload.len()
+                );
             }
         }
 
@@ -368,7 +362,11 @@ impl ClientHandler {
             for (zone_idx, count) in zones.iter().enumerate() {
                 let end = (offset + count).min(colors.len());
                 if offset < colors.len() {
-                    buf.set(device_id.clone(), zone_idx as u8, colors[offset..end].to_vec());
+                    buf.set(
+                        device_id.clone(),
+                        zone_idx as u8,
+                        colors[offset..end].to_vec(),
+                    );
                 }
                 offset = end;
             }
@@ -413,7 +411,9 @@ impl ClientHandler {
             for (zone_idx, count) in zones.iter().enumerate() {
                 if led_idx < offset + count {
                     let colors = vec![[r, g, b]];
-                    self.direct_buffer.lock().set(device_id, zone_idx as u8, colors);
+                    self.direct_buffer
+                        .lock()
+                        .set(device_id, zone_idx as u8, colors);
                     break;
                 }
                 offset += count;
@@ -568,7 +568,10 @@ impl ClientHandler {
         }
 
         // description
-        write_string(&mut buf, &format!("Lian Li {} RGB Controller", cap.device_name));
+        write_string(
+            &mut buf,
+            &format!("Lian Li {} RGB Controller", cap.device_name),
+        );
 
         // version
         write_string(&mut buf, env!("CARGO_PKG_VERSION"));
@@ -663,16 +666,10 @@ impl ClientHandler {
             };
 
             modes.push(self.build_mode_entry(
-                name,
-                value,
-                flags,
-                color_mode,
-                colors_min,
-                colors_max,
-                0,    // speed_min
-                4,    // speed_max
-                2,    // default speed
-                4,    // default brightness
+                name, value, flags, color_mode, colors_min, colors_max, 0, // speed_min
+                4, // speed_max
+                2, // default speed
+                4, // default brightness
             ));
         }
 
