@@ -128,8 +128,15 @@ pub fn prepare_media_asset(
                 "sensor entry requires a 'sensor' field".into(),
             ))?;
             let bg_path = cfg.path.as_deref();
-            let asset =
-                SensorAsset::new(descriptor, cfg.orientation, screen, all_sensors, bg_path)?;
+            let update_interval_ms = cfg.update_interval_ms.unwrap_or(1000);
+            let asset = SensorAsset::new(
+                descriptor,
+                cfg.orientation,
+                screen,
+                all_sensors,
+                bg_path,
+                update_interval_ms,
+            )?;
             Ok(MediaAssetKind::Sensor { asset })
         }
         MediaType::Doublegauge => {
@@ -140,8 +147,15 @@ pub fn prepare_media_asset(
             })?;
             let source_1 = resolve_sensor_config(&cfg.sensor_source_1, all_sensors)?;
             let source_2 = resolve_sensor_config(&cfg.sensor_source_2, all_sensors)?;
-            let asset =
-                DoublegaugeAsset::new(descriptor, cfg.orientation, screen, source_1, source_2)?;
+            let update_interval_ms = cfg.update_interval_ms.unwrap_or(1000);
+            let asset = DoublegaugeAsset::new(
+                descriptor,
+                cfg.orientation,
+                screen,
+                source_1,
+                source_2,
+                update_interval_ms,
+            )?;
             Ok(MediaAssetKind::Doublegauge { asset })
         }
         MediaType::Cooler => {
@@ -150,7 +164,15 @@ pub fn prepare_media_asset(
             })?;
             let source_1 = resolve_sensor_config(&cfg.sensor_source_1, all_sensors)?;
             let source_2 = resolve_sensor_config(&cfg.sensor_source_2, all_sensors)?;
-            let asset = CoolerAsset::new(descriptor, cfg.orientation, screen, source_1, source_2)?;
+            let update_interval_ms = cfg.update_interval_ms.unwrap_or(1000);
+            let asset = CoolerAsset::new(
+                descriptor,
+                cfg.orientation,
+                screen,
+                source_1,
+                source_2,
+                update_interval_ms,
+            )?;
             Ok(MediaAssetKind::Cooler { asset })
         }
     }

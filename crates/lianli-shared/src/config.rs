@@ -18,6 +18,10 @@ pub struct LcdConfig {
     pub media_type: MediaType,
     pub path: Option<PathBuf>,
     pub fps: Option<f32>,
+    // Polling interval for sensor-driven media types (Sensor, Doublegauge,
+    // Cooler). `fps` stays scoped to Video/GIF. Unset → 1000ms.
+    #[serde(default)]
+    pub update_interval_ms: Option<u64>,
     pub rgb: Option<[u8; 3]>,
     #[serde(default)]
     pub orientation: f32,
@@ -90,6 +94,12 @@ impl LcdConfig {
         if let Some(fps) = self.fps {
             if fps <= 0.0 {
                 bail!("LCD[{device_id}] fps must be positive");
+            }
+        }
+
+        if let Some(ms) = self.update_interval_ms {
+            if !(100..=10_000).contains(&ms) {
+                bail!("LCD[{device_id}] update_interval_ms must be between 100 and 10000");
             }
         }
 
@@ -184,6 +194,16 @@ impl AppConfig {
                     if font_path.is_relative() {
                         sensor.font_path = Some(base_dir.join(font_path));
                     }
+                }
+                // Legacy configs stored the sensor poll rate inside the
+                // descriptor; promote it to the top-level field so Doublegauge
+                // / Cooler pick it up too. Zero out the descriptor copy after
+                // migration so future saves don't re-emit the stale value.
+                if sensor.update_interval_ms != 0 {
+                    if device.update_interval_ms.is_none() {
+                        device.update_interval_ms = Some(sensor.update_interval_ms);
+                    }
+                    sensor.update_interval_ms = 0;
                 }
             }
 

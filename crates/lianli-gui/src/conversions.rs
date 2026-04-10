@@ -219,7 +219,7 @@ pub fn lcd_to_slint(
                 .unwrap_or_default(),
         ),
         sensor_decimal_places: sensor.map(|s| s.decimal_places as i32).unwrap_or(0),
-        sensor_update_interval: sensor.map(|s| s.update_interval_ms as i32).unwrap_or(1000),
+        update_interval_ms: lcd.update_interval_ms.unwrap_or(1000) as i32,
         sensor_value_font_size: sensor.map(|s| s.value_font_size as i32).unwrap_or(120),
         sensor_unit_font_size: sensor.map(|s| s.unit_font_size as i32).unwrap_or(40),
         sensor_label_font_size: sensor.map(|s| s.label_font_size as i32).unwrap_or(30),

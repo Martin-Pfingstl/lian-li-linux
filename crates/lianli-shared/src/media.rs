@@ -102,7 +102,10 @@ pub struct SensorDescriptor {
     pub gauge_background_color: [u8; 3],
     #[serde(default = "default_ranges")]
     pub gauge_ranges: Vec<SensorRange>,
-    #[serde(default = "default_update_ms")]
+    // Legacy: pre-0.3.4 configs stored the poll rate here. Kept solely so
+    // `Config::load` can promote it to `LcdConfig::update_interval_ms` during
+    // migration. New code should not read or write this field.
+    #[serde(default)]
     pub update_interval_ms: u64,
     #[serde(default = "default_gauge_start_angle")]
     pub gauge_start_angle: f32,
@@ -162,10 +165,6 @@ impl SensorDescriptor {
             | SensorSourceConfig::MemUsage
             | SensorSourceConfig::MemUsed
             | SensorSourceConfig::MemFree => {}
-        }
-
-        if self.update_interval_ms == 0 {
-            anyhow::bail!("sensor update_interval_ms must be greater than zero");
         }
 
         if self.gauge_sweep_angle <= 0.0 || self.gauge_sweep_angle > 360.0 {
@@ -312,10 +311,6 @@ fn default_ranges() -> Vec<SensorRange> {
             color: [220, 0, 0],
         },
     ]
-}
-
-fn default_update_ms() -> u64 {
-    1_000
 }
 
 fn default_gauge_start_angle() -> f32 {

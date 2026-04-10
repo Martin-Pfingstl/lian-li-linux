@@ -32,7 +32,7 @@ export struct LcdEntryData {
     sensor-command: string,
     sensor-font-path: string,
     sensor-decimal-places: int,
-    sensor-update-interval: int,
+    update-interval-ms: int,
     sensor-value-font-size: int,
     sensor-unit-font-size: int,
     sensor-label-font-size: int,
@@ -837,11 +837,6 @@ component LcdConfigCard inherits Card {
                     Text { text: "Corner R"; font-size: 11px; color: Theme.text-secondary; }
                     SpinBox { value: root.lcd.sensor-corner-radius; minimum: 0; maximum: 100; edited(val) => { root.update-field(root.index, "sensor_corner_radius", "\{val}"); } }
                 }
-                VerticalLayout {
-                    spacing: 4px;
-                    Text { text: "Update (ms)"; font-size: 11px; color: Theme.text-secondary; }
-                    SpinBox { value: root.lcd.sensor-update-interval; minimum: 100; maximum: 10000; edited(val) => { root.update-field(root.index, "sensor_update_interval", "\{val}"); } }
-                }
             }
 
             // Text offsets
@@ -979,7 +974,7 @@ component LcdConfigCard inherits Card {
         HorizontalLayout {
             spacing: 16px;
 
-            if root.lcd.media-type != "Doublegauge" && root.lcd.media-type != "Cooler": VerticalLayout {
+            if root.lcd.media-type == "Video" || root.lcd.media-type == "GIF": VerticalLayout {
                 spacing: 4px;
                 Text { text: "FPS"; font-size: 12px; color: Theme.text-secondary; }
                 SpinBox {
@@ -987,6 +982,17 @@ component LcdConfigCard inherits Card {
                     minimum: 1;
                     maximum: 60;
                     edited(val) => { root.update-field(root.index, "fps", "\{val}"); }
+                }
+            }
+
+            if root.lcd.media-type == "Sensor Gauge" || root.lcd.media-type == "Doublegauge" || root.lcd.media-type == "Cooler": VerticalLayout {
+                spacing: 4px;
+                Text { text: "Update (ms)"; font-size: 12px; color: Theme.text-secondary; }
+                SpinBox {
+                    value: root.lcd.update-interval-ms;
+                    minimum: 100;
+                    maximum: 10000;
+                    edited(val) => { root.update-field(root.index, "update_interval_ms", "\{val}"); }
                 }
             }
 

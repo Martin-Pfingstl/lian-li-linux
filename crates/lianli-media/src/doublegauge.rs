@@ -105,8 +105,11 @@ impl DoublegaugeAsset {
         screen: &ScreenInfo,
         sensor_1: ResolvedSensor,
         sensor_2: ResolvedSensor,
+        update_interval_ms: u64,
     ) -> Result<Arc<Self>, MediaError> {
-        let update_interval = Duration::from_millis(100);
+        // Floor at 100ms — every tick clones the template and redraws from
+        // scratch, pushing harder just burns CPU.
+        let update_interval = Duration::from_millis(update_interval_ms.clamp(100, 10_000));
 
         // Decode image once during init
         let data = include_bytes!("../assets/gauge.jpg");

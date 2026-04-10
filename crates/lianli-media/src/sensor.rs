@@ -55,6 +55,7 @@ impl SensorAsset {
         screen: &ScreenInfo,
         sensors: &[SensorInfo],
         background_image: Option<&Path>,
+        update_interval_ms: u64,
     ) -> Result<Arc<Self>, MediaError> {
         let mut ranges = descriptor.gauge_ranges.clone();
         if ranges.is_empty() {
@@ -145,7 +146,7 @@ impl SensorAsset {
             None
         };
 
-        let update_interval = Duration::from_millis(descriptor.update_interval_ms.max(100));
+        let update_interval = Duration::from_millis(update_interval_ms.clamp(100, 10_000));
         let max_radius = (rw.min(rh) as f32 / 2.0) - 6.0;
         let gauge_outer_radius = descriptor.gauge_outer_radius.clamp(20.0, max_radius);
         let gauge_thickness = descriptor

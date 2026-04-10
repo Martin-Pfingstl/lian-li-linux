@@ -839,6 +839,7 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared) {
                         media_type: lianli_shared::media::MediaType::Image,
                         path: None,
                         fps: Some(30.0),
+                        update_interval_ms: None,
                         rgb: None,
                         orientation: 0.0,
                         sensor_source_1: SensorSourceConfig::CpuUsage,
@@ -1019,10 +1020,9 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared) {
                                 lcd.sensor.get_or_insert_with(default_sensor).decimal_places =
                                     val.parse().unwrap_or(0);
                             }
-                            "sensor_update_interval" => {
-                                lcd.sensor
-                                    .get_or_insert_with(default_sensor)
-                                    .update_interval_ms = val.parse().unwrap_or(1000);
+                            "update_interval_ms" => {
+                                lcd.update_interval_ms =
+                                    Some(val.parse().unwrap_or(1000).clamp(100, 10_000));
                             }
                             "sensor_value_font_size" => {
                                 lcd.sensor
@@ -1429,7 +1429,7 @@ fn default_sensor() -> lianli_shared::media::SensorDescriptor {
         background_color: [0, 0, 0],
         gauge_background_color: [40, 40, 40],
         gauge_ranges: vec![],
-        update_interval_ms: 1000,
+        update_interval_ms: 0, // legacy field, see SensorDescriptor docs
         gauge_start_angle: 135.0,
         gauge_sweep_angle: 270.0,
         gauge_outer_radius: 200.0,
