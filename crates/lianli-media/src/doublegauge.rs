@@ -251,7 +251,8 @@ impl DoublegaugeAsset {
             angle_max,
         );
 
-        let outer_arc_lut = Self::create_lut(center, r_inner, r_outer + 8.0);
+        let outer_arc_lut =
+            Self::create_lut(center, r_inner, r_outer + 8.0, screen.width, screen.height);
 
         let mut full_arc_inner = RgbaImage::new(screen.width, screen.height);
         let rgba_blue_main = Rgba([32, 209, 255, 220]);
@@ -305,7 +306,8 @@ impl DoublegaugeAsset {
             angle_max,
         );
 
-        let inner_arc_lut = Self::create_lut(center, r_inner - 6.0, r_outer);
+        let inner_arc_lut =
+            Self::create_lut(center, r_inner - 6.0, r_outer, screen.width, screen.height);
 
         Ok(Arc::new(Self {
             header: descriptor.header.clone(),
@@ -359,16 +361,23 @@ impl DoublegaugeAsset {
         self.update_interval
     }
 
-    fn create_lut(center: (f32, f32), r_in: f32, r_out: f32) -> Vec<GaugePixel> {
+    fn create_lut(
+        center: (f32, f32),
+        r_in: f32,
+        r_out: f32,
+        width: u32,
+        height: u32,
+    ) -> Vec<GaugePixel> {
         let mut lut = Vec::new();
         let r_in_sq = r_in * r_in;
         let r_out_sq = r_out * r_out;
 
-        // Scan the bounding box
-        let x_start = (center.0 - r_out) as u32;
-        let x_end = (center.0 + r_out) as u32;
-        let y_start = (center.1 - r_out) as u32;
-        let y_end = (center.1 + r_out) as u32;
+        // Scan the bounding box, clamped to the image so apply_lut_mask never
+        // indexes past the buffer on non-square panels.
+        let x_start = (center.0 - r_out).floor().max(0.0) as u32;
+        let x_end = ((center.0 + r_out).ceil().max(0.0) as u32).min(width);
+        let y_start = (center.1 - r_out).floor().max(0.0) as u32;
+        let y_end = ((center.1 + r_out).ceil().max(0.0) as u32).min(height);
 
         for y in y_start..y_end {
             for x in x_start..x_end {
