@@ -5,9 +5,11 @@
 
 use crate::rgb_controller::RgbController;
 use crate::service::DaemonEvent;
+use crate::template_store;
 use lianli_shared::config::AppConfig;
 use lianli_shared::ipc::{DeviceInfo, IpcRequest, IpcResponse, TelemetrySnapshot};
 use lianli_shared::sensors::Unit;
+use lianli_shared::template::LcdTemplate;
 use parking_lot::Mutex;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -32,6 +34,8 @@ pub struct DaemonState {
     pub telemetry: TelemetrySnapshot,
     /// RGB controller, set once devices are opened.
     pub rgb_controller: Option<Arc<Mutex<RgbController>>>,
+    /// User-defined LCD templates (excluding built-ins).
+    pub user_templates: Vec<LcdTemplate>,
 }
 
 impl DaemonState {
@@ -42,7 +46,13 @@ impl DaemonState {
             devices: Vec::new(),
             telemetry: TelemetrySnapshot::default(),
             rgb_controller: None,
+            user_templates: Vec::new(),
         }
+    }
+
+    /// Path of the `lcd_templates.json` file, derived from `config_path`.
+    pub fn templates_path(&self) -> PathBuf {
+        template_store::templates_path_for(&self.config_path)
     }
 }
 
@@ -404,6 +414,38 @@ fn handle_request(
             IpcResponse::ok(serde_json::json!({
                 "message": "Bind command queued. Device should appear shortly."
             }))
+        }
+
+        IpcRequest::GetLcdTemplates => {
+            let state = state.lock();
+            let all = template_store::all_templates(&state.user_templates);
+            IpcResponse::ok(&all)
+        }
+
+        IpcRequest::SetLcdTemplates { templates } => {
+            let mut state = state.lock();
+            let path = state.templates_path();
+            match template_store::save_user_templates(&path, &templates) {
+                Ok(()) => {
+                    // Reload from disk to apply the built-in filtering done in
+                    // save_user_templates, so in-memory state matches disk.
+                    state.user_templates = template_store::load_user_templates(&path);
+                    tx.send(DaemonEvent::IpcUpdate).ok();
+                    info!("LCD templates updated via IPC");
+                    IpcResponse::ok(serde_json::json!(null))
+                }
+                Err(e) => IpcResponse::error(format!("failed to write templates: {e}")),
+            }
+        }
+
+        IpcRequest::RenderTemplatePreview {
+            template: _template,
+            width: _width,
+            height: _height,
+        } => {
+            // Commit 1 stub: real rendering lands in Commit 2 when CustomAsset
+            // exists. Commit 4's editor is the only caller of this endpoint.
+            IpcResponse::error("template preview rendering not implemented yet")
         }
 
         IpcRequest::Subscribe => {

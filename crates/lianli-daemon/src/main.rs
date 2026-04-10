@@ -3,6 +3,7 @@ mod ipc_server;
 mod openrgb_server;
 mod rgb_controller;
 mod service;
+mod template_store;
 
 use clap::Parser;
 use std::path::PathBuf;

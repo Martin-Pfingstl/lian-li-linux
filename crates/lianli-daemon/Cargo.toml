@@ -15,6 +15,7 @@ lianli-media = { path = "../lianli-media" }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }

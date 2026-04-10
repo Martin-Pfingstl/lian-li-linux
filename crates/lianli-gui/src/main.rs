@@ -846,6 +846,7 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared) {
                         sensor_source_2: SensorSourceConfig::MemUsage,
                         sensor: None,
                         doublegauge: None,
+                        template_id: None,
                     });
                 }
             }
@@ -978,6 +979,25 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared) {
                                         lcd.doublegauge.get_or_insert_with(default_doublegauge);
                                         lcd.path = None;
                                         lianli_shared::media::MediaType::Cooler
+                                    }
+                                    "Custom" => {
+                                        // Default to the built-in Cooler template so newly-
+                                        // selected Custom entries have a valid template_id.
+                                        // The GUI template picker (Commit 3) lets the user
+                                        // choose a different one.
+                                        if lcd
+                                            .template_id
+                                            .as_ref()
+                                            .map(|s| s.trim().is_empty())
+                                            .unwrap_or(true)
+                                        {
+                                            lcd.template_id = Some(
+                                                lianli_shared::template_defaults::BUILTIN_COOLER_ID
+                                                    .to_string(),
+                                            );
+                                        }
+                                        lcd.path = None;
+                                        lianli_shared::media::MediaType::Custom
                                     }
                                     _ => lcd.media_type,
                                 };

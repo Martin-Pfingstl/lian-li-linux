@@ -112,6 +112,7 @@ fn media_type_to_string(mt: &MediaType) -> &'static str {
         MediaType::Sensor => "Sensor Gauge",
         MediaType::Doublegauge => "Doublegauge",
         MediaType::Cooler => "Cooler",
+        MediaType::Custom => "Custom",
     }
 }
 

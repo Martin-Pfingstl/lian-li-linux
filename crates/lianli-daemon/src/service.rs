@@ -2,6 +2,7 @@ use crate::fan_controller::FanController;
 use crate::ipc_server::{self, DaemonState};
 use crate::openrgb_server;
 use crate::rgb_controller::RgbController;
+use crate::template_store;
 use anyhow::Result;
 use lianli_devices::crypto::PacketBuilder;
 use lianli_devices::detect::{
@@ -852,6 +853,17 @@ impl ServiceManager {
     }
 
     fn load_config(&mut self, tx: Sender<DaemonEvent>) -> bool {
+        // Reload user LCD templates alongside the main config. Missing file →
+        // empty list (built-ins still resolvable).
+        let templates_path = template_store::templates_path_for(&self.config_path);
+        let user_templates = template_store::load_user_templates(&templates_path);
+        for t in &user_templates {
+            if let Err(e) = t.validate() {
+                warn!("Template: {e}");
+            }
+        }
+        self.ipc_state.lock().user_templates = user_templates;
+
         match AppConfig::load(&self.config_path) {
             Ok((cfg, warnings)) => {
                 for w in &warnings {
@@ -885,6 +897,7 @@ impl ServiceManager {
             .collect();
 
         let all_sensors = lianli_shared::sensors::enumerate_sensors();
+        let user_templates = self.ipc_state.lock().user_templates.clone();
 
         if let Some(cfg) = &self.config {
             for (idx, device) in cfg.lcds.iter().enumerate() {
@@ -902,6 +915,7 @@ impl ServiceManager {
                     &screen,
                     screen.h264,
                     &all_sensors,
+                    &user_templates,
                 ) {
                     Ok(asset_kind) => {
                         let device_id = device.device_id();
@@ -928,6 +942,10 @@ impl ServiceManager {
                                     .as_ref()
                                     .map(|s| s.label.as_str())
                                     .unwrap_or("<unknown>")
+                            ),
+                            MediaType::Custom => info!(
+                                "Prepared custom template for LCD[{device_id}]: {}",
+                                device.template_id.as_deref().unwrap_or("<none>")
                             ),
                         }
                         tx.send(DaemonEvent::FrameFinished { asset: asset_arc })

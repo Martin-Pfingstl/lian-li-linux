@@ -11,6 +11,7 @@ pub enum MediaType {
     Sensor,
     Doublegauge,
     Cooler,
+    Custom,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

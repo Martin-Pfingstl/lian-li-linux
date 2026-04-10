@@ -7,3 +7,5 @@ pub mod rgb;
 pub mod screen;
 pub mod sensors;
 pub mod systeminfo;
+pub mod template;
+pub mod template_defaults;

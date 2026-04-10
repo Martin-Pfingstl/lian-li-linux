@@ -2,6 +2,7 @@ use crate::config::{AppConfig, LcdConfig};
 use crate::device_id::DeviceFamily;
 use crate::fan::FanConfig;
 use crate::rgb::{RgbAppConfig, RgbEffect};
+use crate::template::LcdTemplate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -67,6 +68,21 @@ pub enum IpcRequest {
         mac: String,
     },
     ListSensors,
+    /// Get all known LCD templates (built-ins + user). Returns `Vec<LcdTemplate>`.
+    GetLcdTemplates,
+    /// Replace the user-defined LCD template set. Built-ins are unaffected.
+    /// Daemon writes `lcd_templates.json` and broadcasts a config reload.
+    SetLcdTemplates {
+        templates: Vec<LcdTemplate>,
+    },
+    /// Render a single frame from the given template at the given dimensions
+    /// and return it as a base64-encoded JPEG. Used by the template editor's
+    /// preview canvas; no state is persisted.
+    RenderTemplatePreview {
+        template: LcdTemplate,
+        width: u32,
+        height: u32,
+    },
     Subscribe,
     Ping,
 }
