@@ -75,12 +75,40 @@ export struct EditorWidget {
     fps: float,
 }
 
+component ReorderButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: 18px;
+    height: 20px;
+    border-radius: 3px;
+    background: touch.has-hover && root.enabled
+        ? Theme.accent.transparentize(0.7)
+        : transparent;
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        font-size: 10px;
+        color: root.enabled ? Theme.text-primary : Theme.text-secondary.transparentize(0.5);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
 component WidgetListRow inherits Rectangle {
     in property <EditorWidget> widget;
     in property <bool> selected;
     in property <int> index;
+    in property <int> count;
 
     callback clicked(int);
+    callback reorder(int, int);
 
     height: 28px;
     background: selected ? Theme.accent.transparentize(0.6) : transparent;
@@ -92,14 +120,14 @@ component WidgetListRow inherits Rectangle {
 
     HorizontalLayout {
         padding-left: 8px;
-        padding-right: 8px;
+        padding-right: 4px;
         spacing: 6px;
         Text {
             text: root.widget.kind-label;
             font-size: 11px;
             color: Theme.text-secondary;
             vertical-alignment: center;
-            width: 90px;
+            width: 78px;
         }
         Text {
             text: root.widget.id;
@@ -107,6 +135,22 @@ component WidgetListRow inherits Rectangle {
             color: Theme.text-primary;
             vertical-alignment: center;
             horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 0px;
+            ReorderButton {
+                label: "▲";
+                height: 12px;
+                enabled: root.index > 0;
+                clicked => { root.reorder(root.index, root.index - 1); }
+            }
+            ReorderButton {
+                label: "▼";
+                height: 12px;
+                enabled: root.index < root.count - 1;
+                clicked => { root.reorder(root.index, root.index + 1); }
+            }
         }
     }
 }
@@ -392,6 +436,7 @@ export component TemplateEditorWindow inherits Window {
     callback widget-moved(int, float, float);
     callback widget-added(string);
     callback widget-removed(int);
+    callback widget-reorder(int, int);
     // `field == "_select"` is a no-op edit that just sets the selection.
     callback widget-field(int, string, string);
     callback range-field(int, string, string);
@@ -587,11 +632,13 @@ export component TemplateEditorWindow inherits Window {
                             for w[i] in root.widgets: WidgetListRow {
                                 widget: w;
                                 index: i;
+                                count: root.widgets.length;
                                 selected: i == root.selected-index;
                                 clicked(idx) => {
                                     root.selected-index = idx;
                                     root.widget-field(idx, "_select", "");
                                 }
+                                reorder(from, to) => { root.widget-reorder(from, to); }
                             }
                         }
                     }

@@ -242,6 +242,39 @@ pub fn install(main: &MainWindow, shared: Shared) -> EditorHandle {
         let editor_weak = editor.as_weak();
         let preview_version = preview_version.clone();
         let shared = shared.clone();
+        editor.on_widget_reorder(move |from, to| {
+            {
+                let mut st = editor_state.lock();
+                if let Some(tpl) = st.template.as_mut() {
+                    let len = tpl.widgets.len();
+                    let (f, t) = (from as usize, to as usize);
+                    if f < len && t < len && f != t {
+                        let w = tpl.widgets.remove(f);
+                        tpl.widgets.insert(t, w);
+                        if st.selected_widget == from {
+                            st.selected_widget = to;
+                        } else if from < to && st.selected_widget > from && st.selected_widget <= to
+                        {
+                            st.selected_widget -= 1;
+                        } else if to < from && st.selected_widget >= to && st.selected_widget < from
+                        {
+                            st.selected_widget += 1;
+                        }
+                    }
+                }
+            }
+            if let Some(e) = editor_weak.upgrade() {
+                reflect_widgets_model(&e, &editor_state, &shared);
+            }
+            request_preview(&editor_weak, &editor_state, &preview_version, &shared);
+        });
+    }
+
+    {
+        let editor_state = editor_state.clone();
+        let editor_weak = editor.as_weak();
+        let preview_version = preview_version.clone();
+        let shared = shared.clone();
         editor.on_widget_field(move |idx, field, val| {
             if field.as_str() == "_select" {
                 editor_state.lock().selected_widget = idx;

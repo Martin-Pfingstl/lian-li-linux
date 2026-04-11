@@ -247,25 +247,6 @@ impl CustomAsset {
             widget_states.push(state);
         }
 
-        for (widget, state) in template.widgets.iter().zip(widget_states.iter()) {
-            if !widget.visible {
-                continue;
-            }
-            if is_static_widget(&widget.kind) {
-                draw_widget(
-                    &mut composite,
-                    widget,
-                    state,
-                    uniform_scale,
-                    offset_x,
-                    offset_y,
-                    &fonts,
-                    &default_font,
-                    ElapsedMs(0),
-                );
-            }
-        }
-
         Ok(Arc::new(Self {
             template: template.clone(),
             widget_states: Mutex::new(widget_states),
@@ -349,16 +330,13 @@ impl CustomAsset {
         }
 
         let mut frame = self.template_image.clone();
+        let elapsed_ms = now
+            .saturating_duration_since(self.start_instant)
+            .as_millis() as u64;
         for (widget, state) in self.template.widgets.iter().zip(states.iter()) {
             if !widget.visible {
                 continue;
             }
-            if is_static_widget(&widget.kind) {
-                continue;
-            }
-            let elapsed_ms = now
-                .saturating_duration_since(self.start_instant)
-                .as_millis() as u64;
             draw_widget(
                 &mut frame,
                 widget,
@@ -382,10 +360,6 @@ impl CustomAsset {
             frame_index: self.frame_index.fetch_add(1, Ordering::SeqCst),
         }))
     }
-}
-
-fn is_static_widget(kind: &WidgetKind) -> bool {
-    matches!(kind, WidgetKind::Label { .. } | WidgetKind::Image { .. })
 }
 
 fn widget_sensor_source(kind: &WidgetKind) -> Option<&SensorSourceConfig> {
