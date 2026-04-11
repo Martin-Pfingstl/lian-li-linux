@@ -104,6 +104,7 @@ component LcdConfigCard inherits Card {
     callback edit-template(int);
     callback duplicate-template(int);
     callback delete-template(int);
+    callback browse-templates();
 
     VerticalLayout {
         spacing: 12px;
@@ -519,6 +520,10 @@ component LcdConfigCard inherits Card {
                     text: "Delete";
                     clicked => { root.delete-template(root.index); }
                 }
+                Button {
+                    text: "Browse Online";
+                    clicked => { root.browse-templates(); }
+                }
             }
         }
 
@@ -596,6 +601,7 @@ export component LcdPage inherits VerticalLayout {
     callback edit-template(int);
     callback duplicate-template(int);
     callback delete-template(int);
+    callback browse-templates();
 
     PageHeader {
         title: "LCD";
@@ -661,6 +667,7 @@ export component LcdPage inherits VerticalLayout {
                 edit-template(i) => { root.edit-template(i); }
                 duplicate-template(i) => { root.duplicate-template(i); }
                 delete-template(i) => { root.delete-template(i); }
+                browse-templates => { root.browse-templates(); }
             }
         }
     }

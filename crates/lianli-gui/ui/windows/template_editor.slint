@@ -394,6 +394,9 @@ export component TemplateEditorWindow inherits Window {
     min-width: 900px;
     min-height: 540px;
     background: Palette.background;
+    always-on-top: true;
+    no-frame: true;
+    icon: @image-url("../../../../assets/icons/icon.png");
 
     in-out property <string> template-id: "";
     in-out property <string> template-name: "Untitled";

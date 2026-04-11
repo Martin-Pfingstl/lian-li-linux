@@ -6,7 +6,9 @@ import { LcdPage, LcdEntryData, LcdDeviceOption, GaugeRangeData } from "pages/lc
 import { RgbPage, RgbDeviceData, RgbZoneData, RgbColorData } from "pages/rgb.slint";
 import { SettingsPage } from "pages/settings.slint";
 import { TemplateEditorWindow, EditorWidget } from "windows/template_editor.slint";
+import { TemplateBrowserWindow, CatalogEntry } from "windows/template_browser.slint";
 export { TemplateEditorWindow, EditorWidget }
+export { TemplateBrowserWindow, CatalogEntry }
 
 export { DeviceData, FanCurveData, FanGroupData, FanSpeedSlot, CurvePoint, CurveSegment }
 export { LcdEntryData, LcdDeviceOption, GaugeRangeData }
@@ -18,6 +20,7 @@ export component MainWindow inherits Window {
     preferred-height: 640px;
     min-width: 800px;
     min-height: 500px;
+    icon: @image-url("../../../assets/icons/icon.png");
 
     // State properties bound from Rust
     in-out property <int> current-page: 0;
@@ -77,6 +80,7 @@ export component MainWindow inherits Window {
     callback lcd-edit-template(int);
     callback lcd-duplicate-template(int);
     callback lcd-delete-template(int);
+    callback lcd-browse-templates();
 
     // RGB callbacks
     callback rgb-set-mode(string, int, string);
@@ -146,6 +150,7 @@ export component MainWindow inherits Window {
                 edit-template(idx) => { root.lcd-edit-template(idx); }
                 duplicate-template(idx) => { root.lcd-duplicate-template(idx); }
                 delete-template(idx) => { root.lcd-delete-template(idx); }
+                browse-templates => { root.lcd-browse-templates(); }
             }
 
             if root.current-page == 2: FansPage {

@@ -2946,6 +2946,7 @@ version = "0.3.2"
 dependencies = [
  "anyhow",
  "base64",
+ "image 0.24.9",
  "lianli-shared",
  "parking_lot",
  "rfd",

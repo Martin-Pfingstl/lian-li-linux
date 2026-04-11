@@ -3,6 +3,7 @@ mod conversions;
 mod editor;
 mod ipc_client;
 mod state;
+mod template_browser;
 
 use lianli_shared::fan::{FanConfig, FanCurve, FanGroup, FanSpeed};
 use lianli_shared::ipc::IpcRequest;
@@ -227,8 +228,9 @@ fn main() {
     wire_fan_callbacks(&window, &backend, &shared);
 
     let editor_handle = editor::install(&window, shared.clone());
+    let browser_handle = template_browser::install(&window, shared.clone());
 
-    wire_lcd_callbacks(&window, &shared, &editor_handle);
+    wire_lcd_callbacks(&window, &shared, &editor_handle, &browser_handle);
 
     window.run().expect("Failed to run Slint event loop");
     backend.send(backend::BackendCommand::Shutdown);
@@ -827,7 +829,12 @@ fn wire_fan_callbacks(window: &MainWindow, _backend: &backend::BackendHandle, sh
     }
 }
 
-fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared, editor: &editor::EditorHandle) {
+fn wire_lcd_callbacks(
+    window: &MainWindow,
+    shared: &Shared,
+    editor: &editor::EditorHandle,
+    browser: &template_browser::BrowserHandle,
+) {
     {
         let shared = shared.clone();
         let weak = window.as_weak();
@@ -1333,6 +1340,17 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared, editor: &editor::Edi
                 state: editor_state.clone(),
             };
             editor::open(&handle, &shared, target_idx, starting);
+        });
+    }
+
+    {
+        let shared = shared.clone();
+        let browser_window = browser.window.clone_strong();
+        window.on_lcd_browse_templates(move || {
+            let handle = template_browser::BrowserHandle {
+                window: browser_window.clone_strong(),
+            };
+            template_browser::open(&handle, &shared);
         });
     }
 }
