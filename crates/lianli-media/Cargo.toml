@@ -13,3 +13,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 imageproc = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "render-preview"
+path = "src/bin/render_preview.rs"

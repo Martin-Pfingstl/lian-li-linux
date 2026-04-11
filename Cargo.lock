@@ -2809,6 +2809,7 @@ dependencies = [
  "lianli-shared",
  "parking_lot",
  "rusttype",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
