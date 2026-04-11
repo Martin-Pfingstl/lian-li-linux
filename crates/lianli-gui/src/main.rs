@@ -30,6 +30,9 @@ fn main() {
         .init();
 
     let window = MainWindow::new().expect("Failed to create main window");
+    if let Err(e) = slint::set_xdg_app_id("com.sgtaziz.lianlilinux") {
+        tracing::warn!("set_xdg_app_id failed: {e}");
+    }
     window.set_app_version(env!("CARGO_PKG_VERSION").into());
 
     // Shared state — backend will populate on first load
