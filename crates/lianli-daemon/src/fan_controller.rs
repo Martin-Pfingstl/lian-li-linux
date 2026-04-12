@@ -150,11 +150,14 @@ fn fan_control_thread(
 
     while !stop_flag.load(Ordering::Relaxed) {
         let now = Instant::now();
-        if now.duration_since(last_update) < update_interval {
+        let since_last = now.duration_since(last_update);
+        if since_last < update_interval {
             thread::sleep(Duration::from_millis(100));
             continue;
         }
-        last_update = now;
+
+        let tick_start = Instant::now();
+        last_update = tick_start;
 
         for (group_idx, group) in config.speeds.iter().enumerate() {
             // MB RPM sync mode: wired hardware handles it natively, but wireless
@@ -242,7 +245,12 @@ fn fan_control_thread(
             thread::sleep(Duration::from_millis(5));
         }
 
-        thread::sleep(Duration::from_millis(100));
+        let tick_elapsed = tick_start.elapsed();
+        if tick_elapsed >= update_interval {
+            debug!(
+                "fan tick took {tick_elapsed:?}, exceeding {update_interval:?} — skipping cooldown"
+            );
+        }
     }
 
     info!("Fan control thread stopped");
