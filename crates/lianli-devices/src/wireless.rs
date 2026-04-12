@@ -570,8 +570,7 @@ impl WirelessController {
                 if !found_devices && !discovered_devices.lock().is_empty() {
                     found_devices = true;
                 }
-                let interval = if found_devices { 5000 } else { 500 };
-                thread::sleep(Duration::from_millis(interval));
+                thread::sleep(Duration::from_millis(1000));
             }
         }));
 
