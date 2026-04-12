@@ -79,7 +79,7 @@ impl Default for FanConfig {
 }
 
 fn default_update_interval() -> u64 {
-    500
+    1000
 }
 
 /// Custom deserializer: accepts either the new `Vec<FanGroup>` format
