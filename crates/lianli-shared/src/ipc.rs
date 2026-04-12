@@ -62,6 +62,11 @@ pub enum IpcRequest {
         name: String,
         device_id: String,
     },
+    /// Get current per-LED colors for a wireless device zone.
+    GetZoneColors {
+        device_id: String,
+        zone: u8,
+    },
     /// List all saved RGB presets.
     ListRgbPresets,
     /// Apply a named preset (sends stored colors to device).

@@ -772,7 +772,8 @@ impl ServiceManager {
 
         if let Some(ref cfg) = self.config {
             if let Some(ref rgb_cfg) = cfg.rgb {
-                controller.apply_config(rgb_cfg);
+                let presets = self.ipc_state.lock().rgb_presets.clone();
+                controller.apply_config(rgb_cfg, &presets);
             }
         }
 
@@ -785,7 +786,8 @@ impl ServiceManager {
     fn apply_rgb_config(&self) {
         if let (Some(ref rgb), Some(ref cfg)) = (&self.rgb_controller, &self.config) {
             if let Some(ref rgb_cfg) = cfg.rgb {
-                rgb.lock().apply_config(rgb_cfg);
+                let presets = self.ipc_state.lock().rgb_presets.clone();
+                rgb.lock().apply_config(rgb_cfg, &presets);
             }
         }
     }

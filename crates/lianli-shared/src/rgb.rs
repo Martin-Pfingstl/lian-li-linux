@@ -268,6 +268,9 @@ pub struct RgbDeviceConfig {
     /// Use motherboard ARGB header instead of software-controlled effects.
     #[serde(default)]
     pub mb_rgb_sync: bool,
+    /// Name of the currently active RGB preset (if any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_preset: Option<String>,
     pub zones: Vec<RgbZoneConfig>,
 }
 
@@ -307,11 +310,14 @@ impl Default for RgbAppConfig {
     }
 }
 
-/// A single zone's colors within a named RGB preset.
+/// A single zone's state within a named RGB preset.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RgbPresetZone {
     pub zone: u8,
+    #[serde(default)]
     pub colors: Vec<[u8; 3]>,
+    #[serde(default)]
+    pub effect: Option<RgbEffect>,
 }
 
 /// A named per-LED color preset that can be saved to config and applied later.

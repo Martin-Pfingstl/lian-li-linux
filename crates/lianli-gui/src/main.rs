@@ -259,6 +259,15 @@ fn wire_rgb_callbacks(window: &MainWindow, backend: &backend::BackendHandle, sha
                 let mode = mode.clone();
                 update_rgb_zone_in_place(&w, &dev_id, zone, |z| {
                     z.mode = mode.clone();
+                    if mode.as_str() == "Direct" && z.led_colors.row_count() == 0 {
+                        let base_color = z.colors.row_data(0).unwrap_or(crate::RgbColorData {
+                            r: 0,
+                            g: 0,
+                            b: 0,
+                        });
+                        let leds: Vec<crate::RgbColorData> = vec![base_color; z.led_count as usize];
+                        z.led_colors = slint::ModelRc::new(slint::VecModel::from(leds));
+                    }
                 });
             }
         });
@@ -414,6 +423,7 @@ fn wire_rgb_callbacks(window: &MainWindow, backend: &backend::BackendHandle, sha
                         rgb.devices.push(RgbDeviceConfig {
                             device_id: dev_id.clone(),
                             mb_rgb_sync: enabled,
+                            active_preset: None,
                             zones: vec![],
                         });
                     }
@@ -535,6 +545,157 @@ fn wire_rgb_callbacks(window: &MainWindow, backend: &backend::BackendHandle, sha
                     z.swap_tb = swap_tb;
                 });
             }
+        });
+    }
+
+    // Per-LED color
+    {
+        let weak = window.as_weak();
+        window.on_rgb_set_led_color(move |dev_id, zone, idx, r, g, b| {
+            let dev_id_str = dev_id.to_string();
+            ipc_client::send_request(&IpcRequest::SetLedColor {
+                device_id: dev_id_str,
+                zone: zone as u8,
+                led_index: idx as u16,
+                color: [r as u8, g as u8, b as u8],
+            })
+            .ok();
+            if let Some(w) = weak.upgrade() {
+                update_rgb_zone_in_place(&w, dev_id.as_str(), zone as u8, |z| {
+                    if let Some(mut c) = z.led_colors.row_data(idx as usize) {
+                        c.r = r;
+                        c.g = g;
+                        c.b = b;
+                        z.led_colors.set_row_data(idx as usize, c);
+                    }
+                });
+            }
+        });
+    }
+
+    // Fill zone
+    {
+        let weak = window.as_weak();
+        window.on_rgb_fill_zone(move |dev_id, zone, r, g, b| {
+            let dev_id_str = dev_id.to_string();
+            if let Some(w) = weak.upgrade() {
+                let led_count = {
+                    let devices = w.get_rgb_devices();
+                    let mut count = 0usize;
+                    for di in 0..devices.row_count() {
+                        if let Some(d) = devices.row_data(di) {
+                            if d.device_id.as_str() == dev_id.as_str() {
+                                if let Some(z) = d.zones.row_data(zone as usize) {
+                                    count = z.led_count as usize;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    count
+                };
+                if led_count > 0 {
+                    let filled: Vec<[u8; 3]> = vec![[r as u8, g as u8, b as u8]; led_count];
+                    ipc_client::send_request(&IpcRequest::SetRgbDirect {
+                        device_id: dev_id_str,
+                        zone: zone as u8,
+                        colors: filled,
+                    })
+                    .ok();
+                    update_rgb_zone_in_place(&w, dev_id.as_str(), zone as u8, |z| {
+                        let c = crate::RgbColorData { r, g, b };
+                        let leds: Vec<crate::RgbColorData> = vec![c; z.led_count as usize];
+                        z.led_colors = slint::ModelRc::new(slint::VecModel::from(leds));
+                    });
+                }
+            }
+        });
+    }
+
+    // Clear zone
+    {
+        let weak = window.as_weak();
+        window.on_rgb_clear_zone(move |dev_id, zone| {
+            let dev_id_str = dev_id.to_string();
+            if let Some(w) = weak.upgrade() {
+                let led_count = {
+                    let devices = w.get_rgb_devices();
+                    let mut count = 0usize;
+                    for di in 0..devices.row_count() {
+                        if let Some(d) = devices.row_data(di) {
+                            if d.device_id.as_str() == dev_id.as_str() {
+                                if let Some(z) = d.zones.row_data(zone as usize) {
+                                    count = z.led_count as usize;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    count
+                };
+                if led_count > 0 {
+                    let cleared: Vec<[u8; 3]> = vec![[0, 0, 0]; led_count];
+                    ipc_client::send_request(&IpcRequest::SetRgbDirect {
+                        device_id: dev_id_str,
+                        zone: zone as u8,
+                        colors: cleared,
+                    })
+                    .ok();
+                    update_rgb_zone_in_place(&w, dev_id.as_str(), zone as u8, |z| {
+                        let b = crate::RgbColorData { r: 0, g: 0, b: 0 };
+                        let leds: Vec<crate::RgbColorData> = vec![b; z.led_count as usize];
+                        z.led_colors = slint::ModelRc::new(slint::VecModel::from(leds));
+                    });
+                }
+            }
+        });
+    }
+
+    // Save preset
+    {
+        let tx = backend.tx.clone();
+        let shared = shared.clone();
+        window.on_rgb_save_preset(move |dev_id, name| {
+            // Sync local config to daemon before saving preset so effect state is current
+            {
+                let state = shared.lock().unwrap();
+                if let Some(config) = state.config.clone() {
+                    ipc_client::send_request(&IpcRequest::SetConfig { config }).ok();
+                }
+            }
+            ipc_client::send_request(&IpcRequest::SaveRgbPreset {
+                name: name.to_string(),
+                device_id: dev_id.to_string(),
+            })
+            .ok();
+            let _ = tx.send(backend::BackendCommand::ReloadConfig);
+        });
+    }
+
+    // Apply preset
+    {
+        let tx = backend.tx.clone();
+        window.on_rgb_apply_preset(move |dev_id, name| {
+            ipc_client::send_request(&IpcRequest::ApplyRgbPreset {
+                name: name.to_string(),
+                device_id: dev_id.to_string(),
+            })
+            .ok();
+            // Reload config so the GUI picks up the effect changes written by the daemon
+            let _ = tx.send(backend::BackendCommand::ReloadConfig);
+        });
+    }
+
+    // Delete preset
+    {
+        let tx = backend.tx.clone();
+        window.on_rgb_delete_preset(move |dev_id, name| {
+            ipc_client::send_request(&IpcRequest::DeleteRgbPreset {
+                name: name.to_string(),
+                device_id: dev_id.to_string(),
+            })
+            .ok();
+            let _ = tx.send(backend::BackendCommand::ReloadConfig);
         });
     }
 }
@@ -1679,6 +1840,7 @@ fn get_or_create_device_config<'a>(
         rgb.devices.push(RgbDeviceConfig {
             device_id: dev_id.to_string(),
             mb_rgb_sync: false,
+            active_preset: None,
             zones: vec![],
         });
     }

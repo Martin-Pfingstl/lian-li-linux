@@ -5,6 +5,7 @@ use crate::ipc_client;
 use lianli_shared::config::AppConfig;
 use lianli_shared::ipc::{DeviceInfo, IpcRequest, TelemetrySnapshot};
 use lianli_shared::rgb::RgbDeviceCapabilities;
+use slint::Model;
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -13,6 +14,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug)]
 pub enum BackendCommand {
     RefreshDevices,
+    ReloadConfig,
     SaveConfig(AppConfig),
     /// Send an arbitrary IPC request (fire-and-forget).
     IpcRequest(IpcRequest),
@@ -107,6 +109,10 @@ fn run_backend(
         match rx.recv_timeout(timeout) {
             Ok(BackendCommand::RefreshDevices) => {
                 poll_daemon(&window, &shared);
+                last_poll = Instant::now();
+            }
+            Ok(BackendCommand::ReloadConfig) => {
+                load_config(&window, &shared);
                 last_poll = Instant::now();
             }
             Ok(BackendCommand::SaveConfig(config)) => {
@@ -246,6 +252,29 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
             .and_then(ipc_client::unwrap_response)
             .unwrap_or_default();
 
+    let rgb_presets: Vec<lianli_shared::rgb::RgbPreset> =
+        ipc_client::send_request(&IpcRequest::ListRgbPresets)
+            .and_then(ipc_client::unwrap_response)
+            .unwrap_or_default();
+
+    // Fetch live per-LED colors for all wireless device zones
+    let mut live_led_colors: HashMap<(String, u8), Vec<[u8; 3]>> = HashMap::new();
+    for cap in &rgb_caps {
+        if !cap.device_id.starts_with("wireless:") {
+            continue;
+        }
+        for (zidx, _) in cap.zones.iter().enumerate() {
+            if let Ok(resp) = ipc_client::send_request(&IpcRequest::GetZoneColors {
+                device_id: cap.device_id.clone(),
+                zone: zidx as u8,
+            }) {
+                if let Ok(colors) = ipc_client::unwrap_response::<Vec<[u8; 3]>>(resp) {
+                    live_led_colors.insert((cap.device_id.clone(), zidx as u8), colors);
+                }
+            }
+        }
+    }
+
     // Update shared state
     {
         let mut state = shared.lock().unwrap();
@@ -310,8 +339,35 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
                 w.set_fan_groups(conversions::fan_groups_to_model(&fan_cfg, &devices));
 
                 // RGB devices
-                let rgb_model = conversions::rgb_devices_to_model(&rgb_caps, &config);
+                let rgb_model = conversions::rgb_devices_to_model(&rgb_caps, &config, &rgb_presets);
                 w.set_rgb_devices(rgb_model);
+
+                // Inject live per-LED colors for wireless Direct zones
+                if !live_led_colors.is_empty() {
+                    let devices = w.get_rgb_devices();
+                    for di in 0..devices.row_count() {
+                        if let Some(dev) = devices.row_data(di) {
+                            for zi in 0..dev.zones.row_count() {
+                                if let Some(mut zone) = dev.zones.row_data(zi) {
+                                    let key = (dev.device_id.to_string(), zi as u8);
+                                    if let Some(colors) = live_led_colors.get(&key) {
+                                        let leds: Vec<crate::RgbColorData> = colors
+                                            .iter()
+                                            .map(|c| crate::RgbColorData {
+                                                r: c[0] as i32,
+                                                g: c[1] as i32,
+                                                b: c[2] as i32,
+                                            })
+                                            .collect();
+                                        zone.led_colors =
+                                            slint::ModelRc::new(slint::VecModel::from(leds));
+                                        dev.zones.set_row_data(zi, zone);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         })
         .ok();

@@ -530,6 +530,7 @@ fn rgb_mode_to_string(mode: &RgbMode) -> String {
 pub fn rgb_devices_to_model(
     capabilities: &[RgbDeviceCapabilities],
     config: &AppConfig,
+    presets: &[lianli_shared::rgb::RgbPreset],
 ) -> ModelRc<super::RgbDeviceData> {
     let rgb_config = config.rgb.as_ref();
     let device_configs = rgb_config.map(|r| &r.devices);
@@ -611,12 +612,24 @@ pub fn rgb_devices_to_model(
                             )
                         };
 
+                    let led_colors: Vec<super::RgbColorData> = if mode == "Direct" {
+                        let base = colors.first().cloned().unwrap_or(super::RgbColorData {
+                            r: 0,
+                            g: 0,
+                            b: 0,
+                        });
+                        vec![base; zone_info.led_count as usize]
+                    } else {
+                        Vec::new()
+                    };
+
                     super::RgbZoneData {
                         zone_index: zidx as i32,
                         zone_name: SharedString::from(&zone_info.name),
                         led_count: zone_info.led_count as i32,
                         mode: SharedString::from(&mode),
                         colors: ModelRc::new(VecModel::from(colors)),
+                        led_colors: ModelRc::new(VecModel::from(led_colors)),
                         speed,
                         brightness,
                         direction: SharedString::from(&direction),
@@ -647,6 +660,16 @@ pub fn rgb_devices_to_model(
                 .map(|s| SharedString::from(s.as_str()))
                 .collect();
 
+            let preset_names: Vec<SharedString> = presets
+                .iter()
+                .filter(|p| p.device_id == cap.device_id)
+                .map(|p| SharedString::from(&p.name))
+                .collect();
+
+            let active_preset = dev_cfg
+                .and_then(|d| d.active_preset.as_deref())
+                .unwrap_or("");
+
             super::RgbDeviceData {
                 device_id: SharedString::from(&cap.device_id),
                 device_name: SharedString::from(&cap.device_name),
@@ -656,8 +679,11 @@ pub fn rgb_devices_to_model(
                 supports_direction: cap.supports_direction,
                 has_group_zones,
                 synced,
+                is_wireless: cap.device_id.starts_with("wireless:"),
+                active_preset: SharedString::from(active_preset),
                 supported_modes: ModelRc::new(VecModel::from(supported_modes)),
                 supported_scopes: ModelRc::new(VecModel::from(supported_scopes)),
+                preset_names: ModelRc::new(VecModel::from(preset_names)),
                 zones: ModelRc::new(VecModel::from(zones)),
             }
         })

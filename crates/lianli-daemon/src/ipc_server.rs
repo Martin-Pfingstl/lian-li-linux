@@ -9,7 +9,7 @@ use crate::template_store;
 use lianli_media::CustomAsset;
 use lianli_shared::config::AppConfig;
 use lianli_shared::ipc::{DeviceInfo, IpcRequest, IpcResponse, TelemetrySnapshot};
-use lianli_shared::rgb::RgbPreset;
+use lianli_shared::rgb::{RgbDeviceConfig, RgbPreset, RgbPresetZone, RgbZoneConfig};
 use lianli_shared::screen::ScreenInfo;
 use lianli_shared::sensors::Unit;
 use lianli_shared::template::LcdTemplate;
@@ -33,22 +33,31 @@ pub static SOCKET_PATH: LazyLock<String> = LazyLock::new(|| {
 pub struct DaemonState {
     pub config: Option<AppConfig>,
     pub config_path: PathBuf,
+    pub presets_path: PathBuf,
     pub devices: Vec<DeviceInfo>,
     pub telemetry: TelemetrySnapshot,
     /// RGB controller, set once devices are opened.
     pub rgb_controller: Option<Arc<Mutex<RgbController>>>,
     pub user_templates: Vec<LcdTemplate>,
+    pub rgb_presets: Vec<RgbPreset>,
 }
 
 impl DaemonState {
     pub fn new(config_path: PathBuf) -> Self {
+        let presets_path = config_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("rgb_presets.json");
+        let rgb_presets = read_rgb_presets(&presets_path);
         Self {
             config: None,
             config_path,
+            presets_path,
             devices: Vec::new(),
             telemetry: TelemetrySnapshot::default(),
             rgb_controller: None,
             user_templates: Vec::new(),
+            rgb_presets,
         }
     }
 
@@ -504,21 +513,69 @@ fn handle_request(
             }
         }
 
+        IpcRequest::GetZoneColors { device_id, zone } => {
+            let state = state.lock();
+            if let Some(ref rgb) = state.rgb_controller {
+                let rgb = rgb.lock();
+                match rgb.get_zone_colors(&device_id, zone) {
+                    Some(colors) => IpcResponse::ok(&colors),
+                    None => {
+                        IpcResponse::error(format!("zone {zone} not found on device {device_id}"))
+                    }
+                }
+            } else {
+                IpcResponse::error("RGB controller not initialized")
+            }
+        }
+
         IpcRequest::SaveRgbPreset { name, device_id } => {
             let zones = {
                 let state = state.lock();
-                if let Some(ref rgb) = state.rgb_controller {
-                    rgb.lock().get_all_zone_colors(&device_id)
+
+                let led_colors = state
+                    .rgb_controller
+                    .as_ref()
+                    .and_then(|rgb| rgb.lock().get_all_zone_colors(&device_id));
+
+                let zone_configs: Vec<_> = state
+                    .config
+                    .as_ref()
+                    .and_then(|c| c.rgb.as_ref())
+                    .and_then(|r| r.devices.iter().find(|d| d.device_id == device_id))
+                    .map(|d| d.zones.clone())
+                    .unwrap_or_default();
+
+                if let Some(led_zones) = led_colors {
+                    let zones: Vec<RgbPresetZone> = led_zones
+                        .into_iter()
+                        .map(|mut z| {
+                            z.effect = zone_configs
+                                .iter()
+                                .find(|zc| zc.zone_index == z.zone)
+                                .map(|zc| zc.effect.clone());
+                            z
+                        })
+                        .collect();
+                    Some(zones)
+                } else if !zone_configs.is_empty() {
+                    Some(
+                        zone_configs
+                            .iter()
+                            .map(|z| RgbPresetZone {
+                                zone: z.zone_index,
+                                colors: Vec::new(),
+                                effect: Some(z.effect.clone()),
+                            })
+                            .collect(),
+                    )
                 } else {
-                    return IpcResponse::error("RGB controller not initialized");
+                    None
                 }
             };
             let zones = match zones {
                 Some(z) => z,
                 None => {
-                    return IpcResponse::error(format!(
-                        "device {device_id} not found or has no wireless state"
-                    ));
+                    return IpcResponse::error(format!("device {device_id} not found"));
                 }
             };
             let preset = RgbPreset {
@@ -527,69 +584,57 @@ fn handle_request(
                 zones,
             };
             let mut state = state.lock();
-            let app_config = state.config.get_or_insert_with(AppConfig::default);
-            // Upsert by (name, device_id) composite key — presets are device-scoped
-            // so "Rainbow" on device A doesn't collide with "Rainbow" on device B.
-            if let Some(existing) = app_config
+            if let Some(existing) = state
                 .rgb_presets
                 .iter_mut()
                 .find(|p| p.name == name && p.device_id == preset.device_id)
             {
                 *existing = preset;
             } else {
-                app_config.rgb_presets.push(preset);
+                state.rgb_presets.push(preset);
             }
-            let cfg_clone = app_config.clone();
-            match write_config(&state.config_path, &cfg_clone) {
+            match write_rgb_presets(&state.presets_path, &state.rgb_presets) {
                 Ok(()) => {
                     tx.send(DaemonEvent::IpcUpdate).ok();
                     info!("RGB preset '{name}' saved");
                     IpcResponse::ok(serde_json::json!(null))
                 }
-                Err(e) => IpcResponse::error(format!("failed to write config: {e}")),
+                Err(e) => IpcResponse::error(format!("failed to write presets: {e}")),
             }
         }
 
         IpcRequest::DeleteRgbPreset { name, device_id } => {
             let mut state = state.lock();
-            let app_config = state.config.get_or_insert_with(AppConfig::default);
-            let before = app_config.rgb_presets.len();
-            app_config
+            let before = state.rgb_presets.len();
+            state
                 .rgb_presets
                 .retain(|p| !(p.name == name && p.device_id == device_id));
-            if app_config.rgb_presets.len() == before {
+            if state.rgb_presets.len() == before {
                 return IpcResponse::error(format!("preset '{name}' not found for {device_id}"));
             }
-            let cfg_clone = app_config.clone();
-            match write_config(&state.config_path, &cfg_clone) {
+            match write_rgb_presets(&state.presets_path, &state.rgb_presets) {
                 Ok(()) => {
                     tx.send(DaemonEvent::IpcUpdate).ok();
                     info!("RGB preset '{name}' deleted");
                     IpcResponse::ok(serde_json::json!(null))
                 }
-                Err(e) => IpcResponse::error(format!("failed to write config: {e}")),
+                Err(e) => IpcResponse::error(format!("failed to write presets: {e}")),
             }
         }
 
         IpcRequest::ListRgbPresets => {
             let state = state.lock();
-            let presets = state
-                .config
-                .as_ref()
-                .map(|c| c.rgb_presets.clone())
-                .unwrap_or_default();
-            IpcResponse::ok(&presets)
+            IpcResponse::ok(&state.rgb_presets)
         }
 
         IpcRequest::ApplyRgbPreset { name, device_id } => {
             let preset = {
                 let state = state.lock();
-                state.config.as_ref().and_then(|c| {
-                    c.rgb_presets
-                        .iter()
-                        .find(|p| p.name == name && p.device_id == device_id)
-                        .cloned()
-                })
+                state
+                    .rgb_presets
+                    .iter()
+                    .find(|p| p.name == name && p.device_id == device_id)
+                    .cloned()
             };
             let preset = match preset {
                 Some(p) => p,
@@ -597,26 +642,77 @@ fn handle_request(
                     return IpcResponse::error(format!("preset '{name}' not found for {device_id}"))
                 }
             };
-            let state = state.lock();
-            if let Some(ref rgb) = state.rgb_controller {
-                let mut rgb = rgb.lock();
+
+            let mut state = state.lock();
+
+            // Apply effect configs to the main config + set active_preset
+            {
+                let app_config = state.config.get_or_insert_with(AppConfig::default);
+                let rgb_cfg = app_config.rgb.get_or_insert_with(Default::default);
+                let dev_cfg = if let Some(d) = rgb_cfg
+                    .devices
+                    .iter_mut()
+                    .find(|d| d.device_id == preset.device_id)
+                {
+                    d
+                } else {
+                    rgb_cfg.devices.push(RgbDeviceConfig {
+                        device_id: preset.device_id.clone(),
+                        mb_rgb_sync: false,
+                        active_preset: None,
+                        zones: Vec::new(),
+                    });
+                    rgb_cfg.devices.last_mut().unwrap()
+                };
+                dev_cfg.active_preset = Some(name.clone());
                 for zone_entry in &preset.zones {
-                    if let Err(e) = rgb.set_direct_colors(
-                        &preset.device_id,
-                        zone_entry.zone,
-                        &zone_entry.colors,
-                    ) {
-                        return IpcResponse::error(format!(
-                            "failed to apply preset zone {}: {e}",
-                            zone_entry.zone
-                        ));
+                    if let Some(effect) = &zone_entry.effect {
+                        if let Some(z) = dev_cfg
+                            .zones
+                            .iter_mut()
+                            .find(|z| z.zone_index == zone_entry.zone)
+                        {
+                            z.effect = effect.clone();
+                        } else {
+                            dev_cfg.zones.push(RgbZoneConfig {
+                                zone_index: zone_entry.zone,
+                                effect: effect.clone(),
+                                swap_lr: false,
+                                swap_tb: false,
+                            });
+                        }
                     }
                 }
-                info!("RGB preset '{name}' applied to {}", preset.device_id);
-                IpcResponse::ok(serde_json::json!(null))
-            } else {
-                IpcResponse::error("RGB controller not initialized")
+                if let Err(e) = write_config(&state.config_path, state.config.as_ref().unwrap()) {
+                    return IpcResponse::error(format!("failed to write config: {e}"));
+                }
             }
+
+            // Apply per-LED colors if present
+            let has_led_colors = preset.zones.iter().any(|z| !z.colors.is_empty());
+            if has_led_colors {
+                if let Some(ref rgb) = state.rgb_controller {
+                    let mut rgb = rgb.lock();
+                    for zone_entry in &preset.zones {
+                        if !zone_entry.colors.is_empty() {
+                            if let Err(e) = rgb.set_direct_colors(
+                                &preset.device_id,
+                                zone_entry.zone,
+                                &zone_entry.colors,
+                            ) {
+                                return IpcResponse::error(format!(
+                                    "failed to apply preset zone {}: {e}",
+                                    zone_entry.zone
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
+            tx.send(DaemonEvent::IpcUpdate).ok();
+            info!("RGB preset '{name}' applied to {}", preset.device_id);
+            IpcResponse::ok(serde_json::json!(null))
         }
 
         IpcRequest::Subscribe => {
@@ -635,6 +731,22 @@ fn write_config(path: &Path, config: &AppConfig) -> anyhow::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let json = serde_json::to_string_pretty(config)?;
+    fs::write(path, json)?;
+    Ok(())
+}
+
+fn read_rgb_presets(path: &Path) -> Vec<RgbPreset> {
+    match fs::read_to_string(path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn write_rgb_presets(path: &Path, presets: &[RgbPreset]) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(presets)?;
     fs::write(path, json)?;
     Ok(())
 }

@@ -95,6 +95,12 @@ export component MainWindow inherits Window {
     callback rgb-toggle-swap-tb(string, int);
     callback rgb-add-color(string, int);
     callback rgb-remove-color(string, int, int);
+    callback rgb-set-led-color(string, int, int, int, int, int);
+    callback rgb-fill-zone(string, int, int, int, int);
+    callback rgb-clear-zone(string, int);
+    callback rgb-save-preset(string, string);
+    callback rgb-apply-preset(string, string);
+    callback rgb-delete-preset(string, string);
 
     // Fan callbacks
     callback fan-add-curve();
@@ -193,6 +199,12 @@ export component MainWindow inherits Window {
                 toggle-swap-tb(dev-id, zone) => { root.rgb-toggle-swap-tb(dev-id, zone); }
                 add-color(dev-id, zone) => { root.rgb-add-color(dev-id, zone); }
                 remove-color(dev-id, zone, cidx) => { root.rgb-remove-color(dev-id, zone, cidx); }
+                set-led-color(dev-id, zone, idx, r, g, b) => { root.rgb-set-led-color(dev-id, zone, idx, r, g, b); }
+                fill-zone(dev-id, zone, r, g, b) => { root.rgb-fill-zone(dev-id, zone, r, g, b); }
+                clear-zone(dev-id, zone) => { root.rgb-clear-zone(dev-id, zone); }
+                save-preset(dev-id, name) => { root.rgb-save-preset(dev-id, name); }
+                apply-preset(dev-id, name) => { root.rgb-apply-preset(dev-id, name); }
+                delete-preset(dev-id, name) => { root.rgb-delete-preset(dev-id, name); }
                 toggle-openrgb(enabled) => { root.toggle-openrgb(enabled); }
                 save-config => { root.save-config(); }
             }

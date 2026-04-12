@@ -59,6 +59,8 @@ pub struct RgbController {
     wireless_state: HashMap<String, WirelessRgbState>,
     /// Current RGB config (from AppConfig).
     config: Option<RgbAppConfig>,
+    /// Cached presets for restoring active preset LED colors.
+    presets: Vec<lianli_shared::rgb::RgbPreset>,
     /// When true, OpenRGB has active control — suppress native config application.
     openrgb_active: bool,
 }
@@ -92,13 +94,19 @@ impl RgbController {
             wireless,
             wireless_state,
             config: None,
+            presets: Vec::new(),
             openrgb_active: false,
         }
     }
 
     /// Apply an RGB config. Called on config load/change.
-    pub fn apply_config(&mut self, config: &RgbAppConfig) {
+    pub fn apply_config(
+        &mut self,
+        config: &RgbAppConfig,
+        presets: &[lianli_shared::rgb::RgbPreset],
+    ) {
         self.config = Some(config.clone());
+        self.presets = presets.to_vec();
 
         if !config.enabled {
             info!("RGB control disabled in config");
@@ -125,7 +133,6 @@ impl RgbController {
                         dev_cfg.device_id, zone_cfg.zone_index
                     );
                 }
-                // Apply fan direction if the device supports it
                 if zone_cfg.swap_lr || zone_cfg.swap_tb {
                     if let Err(e) = self.set_fan_direction(
                         &dev_cfg.device_id,
@@ -138,6 +145,33 @@ impl RgbController {
                             dev_cfg.device_id, zone_cfg.zone_index
                         );
                     }
+                }
+            }
+
+            // Restore per-LED colors from active preset
+            if let Some(ref preset_name) = dev_cfg.active_preset {
+                if let Some(preset) = presets
+                    .iter()
+                    .find(|p| &p.name == preset_name && p.device_id == dev_cfg.device_id)
+                {
+                    for zone_entry in &preset.zones {
+                        if !zone_entry.colors.is_empty() {
+                            if let Err(e) = self.set_direct_colors(
+                                &dev_cfg.device_id,
+                                zone_entry.zone,
+                                &zone_entry.colors,
+                            ) {
+                                warn!(
+                                    "Failed to restore preset '{}' zone {}: {e}",
+                                    preset_name, zone_entry.zone
+                                );
+                            }
+                        }
+                    }
+                    debug!(
+                        "Restored active preset '{}' for {}",
+                        preset_name, dev_cfg.device_id
+                    );
                 }
             }
         }
@@ -382,7 +416,8 @@ impl RgbController {
                 if !server_enabled {
                     info!("Restoring native RGB config");
                     if let Some(config) = self.config.clone() {
-                        self.apply_config(&config);
+                        let presets = self.presets.clone();
+                        self.apply_config(&config, &presets);
                     }
                 }
             }
@@ -429,6 +464,7 @@ impl RgbController {
                 zones.push(RgbPresetZone {
                     zone: z as u8,
                     colors: state.led_state[start..end].to_vec(),
+                    effect: None,
                 });
             }
         }
