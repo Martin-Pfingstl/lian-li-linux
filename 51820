@@ -1,0 +1,11 @@
+# Nmap 7.99 scan initiated Sun Apr 12 17:17:06 2026 as: nmap -sU -o 51820 128.127.197.39
+Nmap scan report for 128.127.197.39
+Host is up (0.0014s latency).
+Not shown: 996 open|filtered udp ports (no-response)
+PORT      STATE    SERVICE
+53/udp    open     domain
+123/udp   open     ntp
+27015/udp filtered halflife
+50164/udp closed   unknown
+
+# Nmap done at Sun Apr 12 17:17:14 2026 -- 1 IP address (1 host up) scanned in 8.39 seconds
