@@ -845,9 +845,21 @@ impl WirelessController {
         let master_mac = *self.master_mac.lock();
         let master_ch = *self.master_channel.lock();
 
-        // Apply minimum duty enforcement and CLV1 PWM filter
         let mut pwm = *fan_pwm;
         apply_pwm_constraints(&mut pwm, &device);
+
+        // Compare against the device's REPORTED PWM (from RX poll), not what
+        // we last sent. If an RF packet was lost, the device still shows the
+        // old value and the delta triggers a re-send automatically.
+        let needs_send = pwm
+            .iter()
+            .zip(device.current_pwm.iter())
+            .any(|(target, reported)| {
+                target.abs_diff(*reported) > 5 || (*target <= 10 && *reported != *target)
+            });
+        if !needs_send {
+            return Ok(());
+        }
 
         // Build RF PWM packet (240 bytes)
         let mut rf_data = vec![0u8; RF_DATA_SIZE];
@@ -855,9 +867,9 @@ impl WirelessController {
         rf_data[1] = RF_PWM_CMD; // PWM sub-command (0x10)
         rf_data[2..8].copy_from_slice(&device.mac);
         rf_data[8..14].copy_from_slice(&master_mac);
-        rf_data[14] = device.rx_type; // Per-device RX type from discovery
-        rf_data[15] = master_ch; // Target channel = master channel
-        rf_data[16] = 1; // Sequence index (1 for one-shot)
+        rf_data[14] = device.rx_type;
+        rf_data[15] = master_ch;
+        rf_data[16] = device.list_index.wrapping_add(1); // 1-based slave index
         rf_data[17..21].copy_from_slice(&pwm);
 
         // Send as 4 USB packets (60-byte chunks)
