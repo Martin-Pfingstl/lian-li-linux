@@ -141,7 +141,6 @@ impl Ene6k77Controller {
         Ok(ctrl)
     }
 
-    /// Initialize the controller: read firmware version.
     fn initialize(&mut self) -> Result<()> {
         info!(
             "Initializing ENE 6K77 {} (PID={:#06x})",
@@ -149,13 +148,19 @@ impl Ene6k77Controller {
             self.pid
         );
 
-        match self.read_firmware() {
-            Ok(fw) => {
-                info!("  Firmware: {fw}");
-                self.firmware = Some(fw);
-            }
-            Err(e) => {
-                warn!("  Failed to read firmware: {e}");
+        for attempt in 1..=3 {
+            match self.read_firmware() {
+                Ok(fw) => {
+                    info!("  Firmware: {fw}");
+                    self.firmware = Some(fw);
+                    break;
+                }
+                Err(e) => {
+                    warn!("  Firmware read attempt {attempt}/3 failed: {e}");
+                    if attempt < 3 {
+                        thread::sleep(Duration::from_secs(2));
+                    }
+                }
             }
         }
 
