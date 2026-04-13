@@ -208,10 +208,23 @@ impl TlFanController {
         let data_len = response[5] as usize;
         let data = &response[HEADER_LEN..HEADER_LEN + data_len.min(MAX_PAYLOAD)];
 
-        // Firmware version is ASCII text
         let version = String::from_utf8_lossy(data)
             .trim_end_matches('\0')
             .to_string();
+
+        // Consume second response (date/time) to keep buffer in sync
+        let dev = self.device.lock();
+        let mut buf = [0u8; PACKET_SIZE];
+        let n2 = dev.read_timeout(&mut buf, READ_TIMEOUT_MS).unwrap_or(0);
+        if n2 > 0 {
+            let len2 = buf[5] as usize;
+            let data2 = &buf[HEADER_LEN..HEADER_LEN + len2.min(MAX_PAYLOAD)];
+            let date_str = String::from_utf8_lossy(data2)
+                .trim_end_matches('\0')
+                .to_string();
+            debug!("Firmware date: {date_str}");
+        }
+
         Ok(version)
     }
 
@@ -240,7 +253,7 @@ impl TlFanController {
     fn send_speed_locked(dev: &HidBackend, port: u8, fan_index: u8, duty: u8) -> Result<()> {
         let addr = (port << 4) | (fan_index & 0x0F);
         let pkt = Self::build_packet(CMD_SET_FAN_SPEED, &[addr, duty]);
-        Self::drain_read_buffer(dev);
+        dev.read_flush();
         dev.write(&pkt).context("TL Fan: write fan speed")?;
         let mut buf = [0u8; PACKET_SIZE];
         let _ = dev.read_timeout(&mut buf, READ_TIMEOUT_MS);
@@ -461,17 +474,11 @@ impl TlFanController {
         pkt
     }
 
-    /// Drain any stale data sitting in the read buffer.
-    fn drain_read_buffer(dev: &HidBackend) {
-        let mut buf = [0u8; PACKET_SIZE];
-        while dev.read_timeout(&mut buf, 0).unwrap_or(0) > 0 {}
-    }
-
     /// Send a command, try to read a response but ignore failure.
     fn send_command_quiet(&self, cmd: u8, data: &[u8]) -> Result<()> {
         let pkt = Self::build_packet(cmd, data);
         let dev = self.device.lock();
-        Self::drain_read_buffer(&dev);
+        dev.read_flush();
         dev.write(&pkt).context("TL Fan: write command")?;
         let mut buf = [0u8; PACKET_SIZE];
         let _ = dev.read_timeout(&mut buf, READ_TIMEOUT_MS);
@@ -483,7 +490,7 @@ impl TlFanController {
         let pkt = Self::build_packet(cmd, data);
         let dev = self.device.lock();
 
-        Self::drain_read_buffer(&dev);
+        dev.read_flush();
 
         dev.write(&pkt).context("TL Fan: write command")?;
 

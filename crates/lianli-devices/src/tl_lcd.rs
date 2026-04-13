@@ -140,13 +140,37 @@ impl TlLcdDevice {
 
     /// Read firmware version string.
     pub fn read_firmware(&self) -> Result<String> {
-        let resp = self.send_command_with_response(CMD_GET_PRODUCT_INFO, &[])?;
-        let data_len = payload_length(&resp);
-        let data = &resp[HEADER_LEN..HEADER_LEN + data_len.min(MAX_PAYLOAD_PER_PACKET)];
+        let dev = self.device.lock();
+        dev.read_flush();
 
-        Ok(String::from_utf8_lossy(data)
+        let pkt = build_packet(CMD_GET_PRODUCT_INFO, 0, 0, &[]);
+        dev.write(&pkt).context("TLLCD: write firmware request")?;
+
+        // Response 1: version string
+        let mut buf = [0u8; 64];
+        let n = dev.read_timeout(&mut buf, READ_TIMEOUT_MS)
+            .context("TLLCD: read firmware")?;
+        if n == 0 {
+            bail!("TLLCD: no firmware response");
+        }
+        let data_len = payload_length(&buf);
+        let data = &buf[HEADER_LEN..HEADER_LEN + data_len.min(MAX_PAYLOAD_PER_PACKET)];
+        let version_str = String::from_utf8_lossy(data)
             .trim_end_matches('\0')
-            .to_string())
+            .to_string();
+
+        // Response 2: date/time string (must be consumed to keep buffer in sync)
+        let n2 = dev.read_timeout(&mut buf, READ_TIMEOUT_MS).unwrap_or(0);
+        if n2 > 0 {
+            let len2 = payload_length(&buf);
+            let data2 = &buf[HEADER_LEN..HEADER_LEN + len2.min(MAX_PAYLOAD_PER_PACKET)];
+            let date_str = String::from_utf8_lossy(data2)
+                .trim_end_matches('\0')
+                .to_string();
+            debug!("Firmware date: {date_str}");
+        }
+
+        Ok(version_str)
     }
 
     /// Set LCD brightness and rotation via LCD Control command.

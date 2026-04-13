@@ -91,6 +91,7 @@ pub struct ServiceManager {
     /// Cached USB device list from enumerate_devices() — refreshed every USB_ENUM_INTERVAL.
     cached_usb_devices: Vec<DeviceInfo>,
     last_wireless_count: usize,
+    poll_tick: u32,
     restart_requested: bool,
     ipc_state: Arc<Mutex<DaemonState>>, // the (shared) state of the deamon. Shared between daemon itself and IPC thread.
     ipc_stop: Arc<AtomicBool>, // Flag which allows the deamon thread (on shutdown) to tell the IPC thread to stop.
@@ -121,6 +122,7 @@ impl ServiceManager {
             hid_backends: HashMap::new(),
             cached_usb_devices: Vec::new(),
             last_wireless_count: 0,
+            poll_tick: 0,
             restart_requested: false,
             ipc_state,
             ipc_stop: Arc::new(AtomicBool::new(false)),
@@ -196,6 +198,18 @@ impl ServiceManager {
 
         self.refresh_targets();
         self.sync_ipc_telemetry();
+
+        // Check HID LCD health every other tick (~2s)
+        self.poll_tick = self.poll_tick.wrapping_add(1);
+        if self.poll_tick % 2 == 0 {
+            for target in self.targets.values_mut() {
+                if let LcdBackend::HidLcd(d) = &mut target.lcd {
+                    if let Err(e) = d.check_and_recover_lcd() {
+                        debug!("LCD[{}] health check error: {e:#}", target.index);
+                    }
+                }
+            }
+        }
     }
 
     /// Run the daemon main loop. Returns `true` if the daemon should restart.

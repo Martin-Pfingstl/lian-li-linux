@@ -59,4 +59,15 @@ impl HidBackend {
                 .map_err(|e| anyhow::anyhow!("{e}")),
         }
     }
+
+    /// Drain any stale data from the device read buffer.
+    pub fn read_flush(&self) {
+        let mut buf = [0u8; 64];
+        loop {
+            match self.read_timeout(&mut buf, 5) {
+                Ok(n) if n > 0 => continue,
+                _ => break,
+            }
+        }
+    }
 }

@@ -48,6 +48,10 @@ const CMD_SET_FAN_PWM: u8 = 0x8B;
 // B-Commands
 const CMD_LCD_CONTROL: u8 = 0x0C;
 const CMD_SEND_JPEG: u8 = 0x0E;
+const CMD_LCD_AVAILABLE: u8 = 0x17;
+
+// A-Commands (device management)
+const CMD_RESET_DEVICE: u8 = 0x8E;
 
 /// AIO LCD device variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,6 +216,8 @@ impl HydroShiftLcdController {
         } else {
             INIT_READ_TIMEOUT_MS
         };
+        // Flush stale data so we read the actual handshake response
+        self.device.lock().read_flush();
         let resp = self.send_a_command(CMD_HANDSHAKE, &[], timeout)?;
         let data = &resp[A_HEADER_LEN..];
         let data_len = resp[5] as usize;
@@ -274,22 +280,83 @@ impl HydroShiftLcdController {
         self.variant
     }
 
+    /// Check if the LCD is ready to receive frames (B-command 0x17).
+    /// Returns true if available, false if not, or error on timeout.
+    pub fn is_lcd_available(&self) -> Result<bool> {
+        let dev = self.device.lock();
+
+        let mut pkt = vec![0u8; B_PACKET_SIZE];
+        pkt[0] = REPORT_ID_B;
+        pkt[1] = CMD_LCD_AVAILABLE;
+        dev.write(&pkt).context("AIO LCD: write LCD available check")?;
+
+        let mut buf = vec![0u8; B_PACKET_SIZE];
+        let n = dev
+            .read_timeout(&mut buf, READ_TIMEOUT_MS)
+            .context("AIO LCD: read LCD available response")?;
+
+        if n == 0 || buf[1] != CMD_LCD_AVAILABLE {
+            return Ok(false);
+        }
+
+        let data_len = (buf[9] as usize) << 8 | buf[10] as usize;
+        Ok(data_len == 1 && buf[B_HEADER_LEN] == 0)
+    }
+
+    /// Reset device (A-command 0x8E). Returns true on success.
+    pub fn reset_device(&self) -> bool {
+        self.device.lock().read_flush();
+        match self.send_a_command(CMD_RESET_DEVICE, &[], READ_TIMEOUT_MS) {
+            Ok(resp) if resp.len() > A_HEADER_LEN && resp[1] == CMD_RESET_DEVICE => {
+                let data_len = resp[5] as usize;
+                data_len == 1 && resp[A_HEADER_LEN] == 1
+            }
+            _ => false,
+        }
+    }
+
+    /// Check LCD availability and attempt recovery if unavailable.
+    pub fn check_and_recover_lcd(&mut self) -> Result<()> {
+        match self.is_lcd_available() {
+            Ok(true) => Ok(()),
+            Ok(false) => {
+                warn!("LCD not available, attempting reset");
+                if self.reset_device() {
+                    info!("Device reset successful, reinitializing LCD");
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    self.apply_lcd_settings()
+                } else {
+                    warn!("Device reset failed");
+                    Ok(())
+                }
+            }
+            Err(e) => {
+                debug!("LCD availability check failed: {e:#}");
+                Ok(())
+            }
+        }
+    }
+
     fn read_firmware_internal(&self, timeout_ms: i32) -> Result<String> {
+        let dev = self.device.lock();
+
+        // Flush stale data before reading firmware
+        dev.read_flush();
+
         let mut pkt = [0u8; A_PACKET_SIZE];
         pkt[0] = REPORT_ID_A;
         pkt[1] = CMD_GET_FIRMWARE;
-
-        let dev = self.device.lock();
         let written = dev.write(&pkt).context("AIO LCD: write firmware request")?;
         debug!("firmware request: wrote {written} bytes");
 
+        // Response 1: version string
         let mut buf = [0u8; A_PACKET_SIZE];
         let n = dev
             .read_timeout(&mut buf, timeout_ms)
             .context("AIO LCD: read firmware")?;
 
         debug!(
-            "firmware response: {n} bytes, raw={:02x?}",
+            "firmware response 1: {n} bytes, raw={:02x?}",
             &buf[..n.min(20)]
         );
 
@@ -299,9 +366,25 @@ impl HydroShiftLcdController {
 
         let data_len = buf[5] as usize;
         let data = &buf[A_HEADER_LEN..A_HEADER_LEN + data_len.min(58)];
-        Ok(String::from_utf8_lossy(data)
+        let version_str = String::from_utf8_lossy(data)
             .trim_end_matches('\0')
-            .to_string())
+            .to_string();
+
+        // Response 2: date/time string (must be consumed to keep buffer in sync)
+        let n2 = dev
+            .read_timeout(&mut buf, timeout_ms)
+            .unwrap_or(0);
+
+        if n2 > 0 {
+            let len2 = buf[5] as usize;
+            let data2 = &buf[A_HEADER_LEN..A_HEADER_LEN + len2.min(58)];
+            let date_str = String::from_utf8_lossy(data2)
+                .trim_end_matches('\0')
+                .to_string();
+            debug!("firmware response 2 (date): {date_str}");
+        }
+
+        Ok(version_str)
     }
 
     fn send_a_command(&self, cmd: u8, data: &[u8], timeout_ms: i32) -> Result<Vec<u8>> {

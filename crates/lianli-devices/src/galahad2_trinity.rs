@@ -118,6 +118,7 @@ impl Galahad2TrinityController {
 
     /// Perform handshake to read fan and pump RPM.
     pub fn handshake(&mut self) -> Result<Galahad2Handshake> {
+        self.device.lock().read_flush();
         let resp = self.send_a_command(CMD_HANDSHAKE, &[])?;
         let data = &resp[HEADER_LEN..];
         let data_len = resp[5] as usize;
@@ -137,12 +138,39 @@ impl Galahad2TrinityController {
     }
 
     fn read_firmware(&self) -> Result<String> {
-        let resp = self.send_a_command(CMD_GET_FIRMWARE, &[])?;
-        let data_len = resp[5] as usize;
-        let data = &resp[HEADER_LEN..HEADER_LEN + data_len.min(58)];
-        Ok(String::from_utf8_lossy(data)
+        let dev = self.device.lock();
+        dev.read_flush();
+
+        let mut pkt = [0u8; PACKET_SIZE];
+        pkt[0] = REPORT_ID;
+        pkt[1] = CMD_GET_FIRMWARE;
+        dev.write(&pkt).context("Galahad2 Trinity: write firmware request")?;
+
+        // Response 1: version string
+        let mut buf = [0u8; PACKET_SIZE];
+        let n = dev.read_timeout(&mut buf, READ_TIMEOUT_MS)
+            .context("Galahad2 Trinity: read firmware")?;
+        if n == 0 {
+            bail!("Galahad2 Trinity: no firmware response");
+        }
+        let data_len = buf[5] as usize;
+        let data = &buf[HEADER_LEN..HEADER_LEN + data_len.min(58)];
+        let version_str = String::from_utf8_lossy(data)
             .trim_end_matches('\0')
-            .to_string())
+            .to_string();
+
+        // Response 2: date/time string (must be consumed to keep buffer in sync)
+        let n2 = dev.read_timeout(&mut buf, READ_TIMEOUT_MS).unwrap_or(0);
+        if n2 > 0 {
+            let len2 = buf[5] as usize;
+            let data2 = &buf[HEADER_LEN..HEADER_LEN + len2.min(58)];
+            let date_str = String::from_utf8_lossy(data2)
+                .trim_end_matches('\0')
+                .to_string();
+            debug!("Firmware date: {date_str}");
+        }
+
+        Ok(version_str)
     }
 
     pub fn model(&self) -> Galahad2TrinityModel {
