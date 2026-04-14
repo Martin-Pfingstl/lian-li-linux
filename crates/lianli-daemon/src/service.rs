@@ -1388,6 +1388,7 @@ impl LcdBackend {
     ) -> anyhow::Result<()> {
         match self {
             Self::WinUsb(d) => d.send_frame_verified(frame),
+            Self::HidLcd(d) => d.send_static_frame(frame),
             _ => self.send_frame(wireless, builder, frame),
         }
     }

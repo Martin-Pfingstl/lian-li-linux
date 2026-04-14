@@ -47,6 +47,9 @@ pub trait FanDevice: Send + Sync {
 pub trait LcdDevice: Send + Sync {
     fn screen_info(&self) -> &ScreenInfo;
     fn send_jpeg_frame(&mut self, jpeg_data: &[u8]) -> Result<()>;
+    fn send_static_frame(&mut self, jpeg_data: &[u8]) -> Result<()> {
+        self.send_jpeg_frame(jpeg_data)
+    }
     fn set_brightness(&self, brightness: u8) -> Result<()>;
     fn set_rotation(&self, degrees: u16) -> Result<()>;
     fn initialize(&mut self) -> Result<()>;

@@ -223,6 +223,16 @@ impl TlLcdDevice {
         self.send_chunked(CMD_WRITE_SYNC_JPG, jpeg_data, false)
     }
 
+    pub fn switch_to_show_jpg(&self) -> Result<()> {
+        let mut payload = [0u8; 11];
+        payload[0] = LcdControlMode::ShowJpg as u8;
+        payload[4] = self.brightness;
+        payload[5] = 30;
+        payload[6] = self.rotation as u8;
+        self.send_command_with_response(CMD_LCD_CONTROL, &payload)?;
+        Ok(())
+    }
+
     /// Identity (serial, port, index) if read.
     pub fn identity(&self) -> Option<&TlLcdIdentity> {
         self.identity.as_ref()
@@ -306,8 +316,13 @@ impl LcdDevice for TlLcdDevice {
         self.send_sync_jpeg(jpeg_data)
     }
 
+    fn send_static_frame(&mut self, jpeg_data: &[u8]) -> Result<()> {
+        self.send_jpeg(jpeg_data)?;
+        self.switch_to_show_jpg()?;
+        Ok(())
+    }
+
     fn set_brightness(&self, brightness: u8) -> Result<()> {
-        // Can't mutate self here, but we can send the command directly
         let mut payload = [0u8; 11];
         payload[0] = LcdControlMode::LcdSetting as u8;
         payload[4] = brightness.min(100);
