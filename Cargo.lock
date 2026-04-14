@@ -2988,6 +2988,7 @@ name = "lianli-media"
 version = "0.3.4"
 dependencies = [
  "anyhow",
+ "chrono",
  "image 0.24.9",
  "imageproc",
  "lianli-shared",

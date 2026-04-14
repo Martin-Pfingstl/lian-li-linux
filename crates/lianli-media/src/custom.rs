@@ -12,7 +12,7 @@ use crate::common::{apply_orientation, encode_jpeg, render_dimensions, MediaErro
 use crate::sensor::FrameInfo;
 use crate::video::decode_frames_to_rgba;
 use helpers::{
-    fit_image, format_sensor_readout, load_font_from_disk, resolve_sensor_source, widget_font_ref,
+    fit_image, format_sensor_readout, load_font_from_disk, resolve_sensor_source, widget_font_refs,
     widget_sensor_source, widget_size_px, ElapsedMs,
 };
 use image::imageops::FilterType;
@@ -75,7 +75,7 @@ impl CustomAsset {
         let default_font = load_font_from_disk(&default_path)?;
         let mut fonts: HashMap<PathBuf, Font<'static>> = HashMap::new();
         for w in &template.widgets {
-            if let Some(fr) = widget_font_ref(&w.kind) {
+            for fr in widget_font_refs(&w.kind) {
                 if let Some(p) = &fr.path {
                     if !fonts.contains_key(p) {
                         match load_font_from_disk(p) {
@@ -197,6 +197,21 @@ impl CustomAsset {
                 }
             }
 
+            let clock_interval = match widget.kind {
+                WidgetKind::ClockAnalog { show_seconds, .. } if show_seconds => {
+                    Some(Duration::from_millis(100))
+                }
+                WidgetKind::ClockAnalog { .. } | WidgetKind::ClockDigital { .. } => {
+                    Some(Duration::from_millis(500))
+                }
+                _ => None,
+            };
+            if let Some(ci) = clock_interval {
+                if ci < min_interval {
+                    min_interval = ci;
+                }
+            }
+
             widget_states.push(state);
         }
 
@@ -272,7 +287,10 @@ impl CustomAsset {
             }
             if matches!(
                 widget.kind,
-                WidgetKind::Video { .. } | WidgetKind::CoreBars { .. }
+                WidgetKind::Video { .. }
+                    | WidgetKind::CoreBars { .. }
+                    | WidgetKind::ClockDigital { .. }
+                    | WidgetKind::ClockAnalog { .. }
             ) {
                 any_dynamic_changed = true;
             }

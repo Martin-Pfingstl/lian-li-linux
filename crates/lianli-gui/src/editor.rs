@@ -647,6 +647,33 @@ fn widget_to_editor(w: &Widget, sensors: &[SensorInfo]) -> EditorWidget {
         bg_corner_radius: 0,
         value_corner_radius: 0,
         letter_spacing: 0,
+        clock_show_seconds: true,
+        clock_show_hour_ticks: true,
+        clock_show_minor_ticks: true,
+        clock_show_numbers: false,
+        clock_second_hand_r: 220,
+        clock_second_hand_g: 40,
+        clock_second_hand_b: 40,
+        clock_second_hand_a: 255,
+        clock_minor_tick_r: 220,
+        clock_minor_tick_g: 220,
+        clock_minor_tick_b: 220,
+        clock_minor_tick_a: 255,
+        clock_hub_r: 240,
+        clock_hub_g: 240,
+        clock_hub_b: 240,
+        clock_hub_a: 255,
+        clock_hour_hand_width: 6,
+        clock_minute_hand_width: 4,
+        clock_second_hand_width: 2,
+        clock_hour_length_pct: 55,
+        clock_minute_length_pct: 80,
+        clock_second_length_pct: 90,
+        clock_hour_tick_length_pct: 12,
+        clock_minor_tick_length_pct: 5,
+        clock_hour_tick_width: 3,
+        clock_minor_tick_width: 2,
+        clock_hub_radius: 6,
     };
     match &w.kind {
         WidgetKind::Label {
@@ -815,6 +842,101 @@ fn widget_to_editor(w: &Widget, sensors: &[SensorInfo]) -> EditorWidget {
             out.image_path = SharedString::from(path.display().to_string());
             out.opacity = *opacity;
         }
+        WidgetKind::ClockDigital {
+            format,
+            font,
+            font_size,
+            color,
+            align,
+            letter_spacing,
+        } => {
+            out.format = SharedString::from(format.as_str());
+            out.font_name = SharedString::from(font_ref_to_label(font));
+            out.font_size = *font_size;
+            out.color_r = color[0] as i32;
+            out.color_g = color[1] as i32;
+            out.color_b = color[2] as i32;
+            out.color_a = color[3] as i32;
+            out.align = SharedString::from(text_align_name(*align));
+            out.letter_spacing = letter_spacing.round() as i32;
+        }
+        WidgetKind::ClockAnalog {
+            face_color,
+            tick_color,
+            minor_tick_color,
+            hour_hand_color,
+            minute_hand_color,
+            second_hand_color,
+            hub_color,
+            numbers_color,
+            numbers_font,
+            numbers_font_size,
+            show_seconds,
+            show_hour_ticks,
+            show_minor_ticks,
+            show_numbers,
+            hour_hand_width,
+            minute_hand_width,
+            second_hand_width,
+            hour_hand_length_pct,
+            minute_hand_length_pct,
+            second_hand_length_pct,
+            hour_tick_length_pct,
+            minor_tick_length_pct,
+            hour_tick_width,
+            minor_tick_width,
+            hub_radius,
+        } => {
+            out.bg_r = face_color[0] as i32;
+            out.bg_g = face_color[1] as i32;
+            out.bg_b = face_color[2] as i32;
+            out.bg_a = face_color[3] as i32;
+            out.tick_color_r = tick_color[0] as i32;
+            out.tick_color_g = tick_color[1] as i32;
+            out.tick_color_b = tick_color[2] as i32;
+            out.tick_color_a = tick_color[3] as i32;
+            out.clock_minor_tick_r = minor_tick_color[0] as i32;
+            out.clock_minor_tick_g = minor_tick_color[1] as i32;
+            out.clock_minor_tick_b = minor_tick_color[2] as i32;
+            out.clock_minor_tick_a = minor_tick_color[3] as i32;
+            out.needle_color_r = hour_hand_color[0] as i32;
+            out.needle_color_g = hour_hand_color[1] as i32;
+            out.needle_color_b = hour_hand_color[2] as i32;
+            out.needle_color_a = hour_hand_color[3] as i32;
+            out.needle_border_r = minute_hand_color[0] as i32;
+            out.needle_border_g = minute_hand_color[1] as i32;
+            out.needle_border_b = minute_hand_color[2] as i32;
+            out.needle_border_a = minute_hand_color[3] as i32;
+            out.clock_second_hand_r = second_hand_color[0] as i32;
+            out.clock_second_hand_g = second_hand_color[1] as i32;
+            out.clock_second_hand_b = second_hand_color[2] as i32;
+            out.clock_second_hand_a = second_hand_color[3] as i32;
+            out.clock_hub_r = hub_color[0] as i32;
+            out.clock_hub_g = hub_color[1] as i32;
+            out.clock_hub_b = hub_color[2] as i32;
+            out.clock_hub_a = hub_color[3] as i32;
+            out.color_r = numbers_color[0] as i32;
+            out.color_g = numbers_color[1] as i32;
+            out.color_b = numbers_color[2] as i32;
+            out.color_a = numbers_color[3] as i32;
+            out.font_name = SharedString::from(font_ref_to_label(numbers_font));
+            out.font_size = *numbers_font_size;
+            out.clock_show_seconds = *show_seconds;
+            out.clock_show_hour_ticks = *show_hour_ticks;
+            out.clock_show_minor_ticks = *show_minor_ticks;
+            out.clock_show_numbers = *show_numbers;
+            out.clock_hour_hand_width = hour_hand_width.round() as i32;
+            out.clock_minute_hand_width = minute_hand_width.round() as i32;
+            out.clock_second_hand_width = second_hand_width.round() as i32;
+            out.clock_hour_length_pct = (hour_hand_length_pct * 100.0).round() as i32;
+            out.clock_minute_length_pct = (minute_hand_length_pct * 100.0).round() as i32;
+            out.clock_second_length_pct = (second_hand_length_pct * 100.0).round() as i32;
+            out.clock_hour_tick_length_pct = (hour_tick_length_pct * 100.0).round() as i32;
+            out.clock_minor_tick_length_pct = (minor_tick_length_pct * 100.0).round() as i32;
+            out.clock_hour_tick_width = hour_tick_width.round() as i32;
+            out.clock_minor_tick_width = minor_tick_width.round() as i32;
+            out.clock_hub_radius = hub_radius.round() as i32;
+        }
     }
     out
 }
@@ -922,6 +1044,41 @@ fn make_default_widget(id: &str, kind_str: &str, cx: f32, cy: f32) -> Widget {
             loop_playback: true,
             opacity: 1.0,
             fit: ImageFit::Stretch,
+        },
+        "clock_digital" => WidgetKind::ClockDigital {
+            format: "%H:%M".to_string(),
+            font: FontRef::default(),
+            font_size: 48.0,
+            color: [255, 255, 255, 255],
+            align: TextAlign::Center,
+            letter_spacing: 0.0,
+        },
+        "clock_analog" => WidgetKind::ClockAnalog {
+            face_color: [30, 30, 30, 255],
+            tick_color: [220, 220, 220, 255],
+            minor_tick_color: [220, 220, 220, 255],
+            hour_hand_color: [240, 240, 240, 255],
+            minute_hand_color: [240, 240, 240, 255],
+            second_hand_color: [220, 40, 40, 255],
+            hub_color: [240, 240, 240, 255],
+            numbers_color: [230, 230, 230, 255],
+            numbers_font: FontRef::default(),
+            numbers_font_size: 24.0,
+            show_seconds: true,
+            show_hour_ticks: true,
+            show_minor_ticks: true,
+            show_numbers: false,
+            hour_hand_width: 6.0,
+            minute_hand_width: 4.0,
+            second_hand_width: 2.0,
+            hour_hand_length_pct: 0.55,
+            minute_hand_length_pct: 0.8,
+            second_hand_length_pct: 0.9,
+            hour_tick_length_pct: 0.12,
+            minor_tick_length_pct: 0.05,
+            hour_tick_width: 3.0,
+            minor_tick_width: 1.5,
+            hub_radius: 6.0,
         },
         _ => WidgetKind::Label {
             text: "Label".into(),
@@ -1321,6 +1478,159 @@ fn apply_kind_field(kind: &mut WidgetKind, field: &str, val: &str, sensors: &[Se
             "path" => *path = std::path::PathBuf::from(val),
             _ => {}
         },
+        WidgetKind::ClockDigital {
+            format,
+            font,
+            font_size,
+            color,
+            align,
+            letter_spacing,
+        } => match field {
+            "format" => *format = val.to_string(),
+            "font" => *font = label_to_font_ref(val),
+            "font_size" => {
+                if let Ok(v) = val.parse() {
+                    *font_size = v;
+                }
+            }
+            "color_r" => color[0] = parse_u8(val),
+            "color_g" => color[1] = parse_u8(val),
+            "color_b" => color[2] = parse_u8(val),
+            "color_a" => color[3] = parse_u8(val),
+            "align" => *align = parse_align(val),
+            "letter_spacing" => {
+                if let Ok(v) = val.parse::<f32>() {
+                    *letter_spacing = v;
+                }
+            }
+            _ => {}
+        },
+        WidgetKind::ClockAnalog {
+            face_color,
+            tick_color,
+            minor_tick_color,
+            hour_hand_color,
+            minute_hand_color,
+            second_hand_color,
+            hub_color,
+            numbers_color,
+            numbers_font,
+            numbers_font_size,
+            show_seconds,
+            show_hour_ticks,
+            show_minor_ticks,
+            show_numbers,
+            hour_hand_width,
+            minute_hand_width,
+            second_hand_width,
+            hour_hand_length_pct,
+            minute_hand_length_pct,
+            second_hand_length_pct,
+            hour_tick_length_pct,
+            minor_tick_length_pct,
+            hour_tick_width,
+            minor_tick_width,
+            hub_radius,
+        } => match field {
+            "bg_r" => face_color[0] = parse_u8(val),
+            "bg_g" => face_color[1] = parse_u8(val),
+            "bg_b" => face_color[2] = parse_u8(val),
+            "bg_a" => face_color[3] = parse_u8(val),
+            "tick_color_r" => tick_color[0] = parse_u8(val),
+            "tick_color_g" => tick_color[1] = parse_u8(val),
+            "tick_color_b" => tick_color[2] = parse_u8(val),
+            "tick_color_a" => tick_color[3] = parse_u8(val),
+            "clock_minor_tick_r" => minor_tick_color[0] = parse_u8(val),
+            "clock_minor_tick_g" => minor_tick_color[1] = parse_u8(val),
+            "clock_minor_tick_b" => minor_tick_color[2] = parse_u8(val),
+            "clock_minor_tick_a" => minor_tick_color[3] = parse_u8(val),
+            "needle_color_r" => hour_hand_color[0] = parse_u8(val),
+            "needle_color_g" => hour_hand_color[1] = parse_u8(val),
+            "needle_color_b" => hour_hand_color[2] = parse_u8(val),
+            "needle_color_a" => hour_hand_color[3] = parse_u8(val),
+            "needle_border_r" => minute_hand_color[0] = parse_u8(val),
+            "needle_border_g" => minute_hand_color[1] = parse_u8(val),
+            "needle_border_b" => minute_hand_color[2] = parse_u8(val),
+            "needle_border_a" => minute_hand_color[3] = parse_u8(val),
+            "clock_second_hand_r" => second_hand_color[0] = parse_u8(val),
+            "clock_second_hand_g" => second_hand_color[1] = parse_u8(val),
+            "clock_second_hand_b" => second_hand_color[2] = parse_u8(val),
+            "clock_second_hand_a" => second_hand_color[3] = parse_u8(val),
+            "clock_hub_r" => hub_color[0] = parse_u8(val),
+            "clock_hub_g" => hub_color[1] = parse_u8(val),
+            "clock_hub_b" => hub_color[2] = parse_u8(val),
+            "clock_hub_a" => hub_color[3] = parse_u8(val),
+            "color_r" => numbers_color[0] = parse_u8(val),
+            "color_g" => numbers_color[1] = parse_u8(val),
+            "color_b" => numbers_color[2] = parse_u8(val),
+            "color_a" => numbers_color[3] = parse_u8(val),
+            "font" => *numbers_font = label_to_font_ref(val),
+            "font_size" => {
+                if let Ok(v) = val.parse() {
+                    *numbers_font_size = v;
+                }
+            }
+            "clock_show_seconds" => *show_seconds = val == "true",
+            "clock_show_hour_ticks" => *show_hour_ticks = val == "true",
+            "clock_show_minor_ticks" => *show_minor_ticks = val == "true",
+            "clock_show_numbers" => *show_numbers = val == "true",
+            "clock_hour_hand_width" => {
+                if let Ok(v) = val.parse::<f32>() {
+                    *hour_hand_width = v.max(1.0);
+                }
+            }
+            "clock_minute_hand_width" => {
+                if let Ok(v) = val.parse::<f32>() {
+                    *minute_hand_width = v.max(1.0);
+                }
+            }
+            "clock_second_hand_width" => {
+                if let Ok(v) = val.parse::<f32>() {
+                    *second_hand_width = v.max(1.0);
+                }
+            }
+            "clock_hour_length_pct" => {
+                if let Ok(v) = val.parse::<i32>() {
+                    *hour_hand_length_pct = (v.clamp(10, 120) as f32) / 100.0;
+                }
+            }
+            "clock_minute_length_pct" => {
+                if let Ok(v) = val.parse::<i32>() {
+                    *minute_hand_length_pct = (v.clamp(10, 120) as f32) / 100.0;
+                }
+            }
+            "clock_second_length_pct" => {
+                if let Ok(v) = val.parse::<i32>() {
+                    *second_hand_length_pct = (v.clamp(10, 120) as f32) / 100.0;
+                }
+            }
+            "clock_hour_tick_length_pct" => {
+                if let Ok(v) = val.parse::<i32>() {
+                    *hour_tick_length_pct = (v.clamp(0, 50) as f32) / 100.0;
+                }
+            }
+            "clock_minor_tick_length_pct" => {
+                if let Ok(v) = val.parse::<i32>() {
+                    *minor_tick_length_pct = (v.clamp(0, 50) as f32) / 100.0;
+                }
+            }
+            "clock_hour_tick_width" => {
+                if let Ok(v) = val.parse::<f32>() {
+                    *hour_tick_width = v.max(1.0);
+                }
+            }
+            "clock_minor_tick_width" => {
+                if let Ok(v) = val.parse::<f32>() {
+                    *minor_tick_width = v.max(1.0);
+                }
+            }
+            "clock_hub_radius" => {
+                if let Ok(v) = val.parse::<f32>() {
+                    *hub_radius = v.max(0.0);
+                }
+            }
+            _ => {}
+        },
     }
 }
 
@@ -1643,6 +1953,33 @@ fn blank_editor_widget() -> EditorWidget {
         opacity: 1.0,
         fps: 30.0,
         letter_spacing: 0,
+        clock_show_seconds: true,
+        clock_show_hour_ticks: true,
+        clock_show_minor_ticks: true,
+        clock_show_numbers: false,
+        clock_second_hand_r: 220,
+        clock_second_hand_g: 40,
+        clock_second_hand_b: 40,
+        clock_second_hand_a: 255,
+        clock_minor_tick_r: 220,
+        clock_minor_tick_g: 220,
+        clock_minor_tick_b: 220,
+        clock_minor_tick_a: 255,
+        clock_hub_r: 240,
+        clock_hub_g: 240,
+        clock_hub_b: 240,
+        clock_hub_a: 255,
+        clock_hour_hand_width: 6,
+        clock_minute_hand_width: 4,
+        clock_second_hand_width: 2,
+        clock_hour_length_pct: 55,
+        clock_minute_length_pct: 80,
+        clock_second_length_pct: 90,
+        clock_hour_tick_length_pct: 12,
+        clock_minor_tick_length_pct: 5,
+        clock_hour_tick_width: 3,
+        clock_minor_tick_width: 2,
+        clock_hub_radius: 6,
         corner_radius: 0,
         bg_corner_radius: 0,
         value_corner_radius: 0,

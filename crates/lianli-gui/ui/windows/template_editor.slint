@@ -76,6 +76,34 @@ export struct EditorWidget {
 
     show-labels: bool,
 
+    clock-show-seconds: bool,
+    clock-show-hour-ticks: bool,
+    clock-show-minor-ticks: bool,
+    clock-show-numbers: bool,
+    clock-second-hand-r: int,
+    clock-second-hand-g: int,
+    clock-second-hand-b: int,
+    clock-second-hand-a: int,
+    clock-minor-tick-r: int,
+    clock-minor-tick-g: int,
+    clock-minor-tick-b: int,
+    clock-minor-tick-a: int,
+    clock-hub-r: int,
+    clock-hub-g: int,
+    clock-hub-b: int,
+    clock-hub-a: int,
+    clock-hour-hand-width: int,
+    clock-minute-hand-width: int,
+    clock-second-hand-width: int,
+    clock-hour-length-pct: int,
+    clock-minute-length-pct: int,
+    clock-second-length-pct: int,
+    clock-hour-tick-length-pct: int,
+    clock-minor-tick-length-pct: int,
+    clock-hour-tick-width: int,
+    clock-minor-tick-width: int,
+    clock-hub-radius: int,
+
     image-path: string,
     opacity: float,
     fps: float,
@@ -427,10 +455,12 @@ export component TemplateEditorWindow inherits Window {
     in property <[string]> widget-kinds: [
         "label", "value_text", "radial_gauge", "vertical_bar",
         "horizontal_bar", "speedometer", "core_bars", "image", "video",
+        "clock_digital", "clock_analog",
     ];
     in property <[string]> widget-kind-labels: [
         "Label", "Sensor Value", "Radial Gauge", "Vertical Bar",
         "Horizontal Bar", "Speedometer", "Core Usage", "Image", "Video",
+        "Clock (Digital)", "Clock (Analog)",
     ];
     in property <[string]> font-names: [];
     in property <[string]> align-options: ["left", "center", "right"];
@@ -788,41 +818,48 @@ export component TemplateEditorWindow inherits Window {
                             Rectangle { height: 1px; background: Theme.border; }
 
                             if root.selected-widget.kind == "label"
-                               || root.selected-widget.kind == "value_text": VerticalLayout {
+                               || root.selected-widget.kind == "value_text"
+                               || root.selected-widget.kind == "clock_digital"
+                               || root.selected-widget.kind == "clock_analog": VerticalLayout {
                                 spacing: 6px;
                                 if root.selected-widget.kind == "label" : LabeledLineEdit {
                                     label: "Text";
                                     value: root.selected-widget.text;
                                     edited(v) => { root.widget-field(root.selected-index, "text", v); }
                                 }
+                                if root.selected-widget.kind == "clock_digital" : LabeledLineEdit {
+                                    label: "Time format (strftime)";
+                                    value: root.selected-widget.format;
+                                    edited(v) => { root.widget-field(root.selected-index, "format", v); }
+                                }
                                 LabeledSpinBox {
-                                    label: "Font size";
+                                    label: root.selected-widget.kind == "clock_analog" ? "Numbers size" : "Font size";
                                     value: root.selected-widget.font-size;
                                     minimum: 6;
                                     maximum: 400;
                                     edited(v) => { root.widget-field(root.selected-index, "font_size", v); }
                                 }
                                 LabeledComboValue {
-                                    label: "Font";
+                                    label: root.selected-widget.kind == "clock_analog" ? "Numbers font" : "Font";
                                     model: root.font-names;
                                     value: root.selected-widget.font-name;
                                     selected(v) => { root.widget-field(root.selected-index, "font", v); }
                                 }
-                                LabeledComboValue {
+                                if root.selected-widget.kind != "clock_analog" : LabeledComboValue {
                                     label: "Align";
                                     model: root.align-options;
                                     value: root.selected-widget.align;
                                     selected(v) => { root.widget-field(root.selected-index, "align", v); }
                                 }
                                 RgbaRow {
-                                    title: "Color (R / G / B / A)";
+                                    title: root.selected-widget.kind == "clock_analog" ? "Numbers color (R / G / B / A)" : "Color (R / G / B / A)";
                                     r: root.selected-widget.color-r;
                                     g: root.selected-widget.color-g;
                                     b: root.selected-widget.color-b;
                                     a: root.selected-widget.color-a;
                                     edited(ch, v) => { root.widget-field(root.selected-index, "color_" + ch, v); }
                                 }
-                                LabeledSpinBox {
+                                if root.selected-widget.kind != "clock_analog" : LabeledSpinBox {
                                     label: "Letter spacing";
                                     value: root.selected-widget.letter-spacing;
                                     minimum: -20;
@@ -1014,6 +1051,163 @@ export component TemplateEditorWindow inherits Window {
                                 text: "Show core numbers";
                                 checked: root.selected-widget.show-labels;
                                 toggled(c) => { root.widget-field(root.selected-index, "show_labels", c ? "true" : "false"); }
+                            }
+
+                            if root.selected-widget.kind == "clock_analog": VerticalLayout {
+                                spacing: 6px;
+                                RgbaRow {
+                                    title: "Face color (R / G / B / A)";
+                                    r: root.selected-widget.bg-r;
+                                    g: root.selected-widget.bg-g;
+                                    b: root.selected-widget.bg-b;
+                                    a: root.selected-widget.bg-a;
+                                    edited(ch, v) => { root.widget-field(root.selected-index, "bg_" + ch, v); }
+                                }
+                                LabeledCheckBox {
+                                    text: "Show seconds hand";
+                                    checked: root.selected-widget.clock-show-seconds;
+                                    toggled(c) => { root.widget-field(root.selected-index, "clock_show_seconds", c ? "true" : "false"); }
+                                }
+                                LabeledCheckBox {
+                                    text: "Show hour ticks";
+                                    checked: root.selected-widget.clock-show-hour-ticks;
+                                    toggled(c) => { root.widget-field(root.selected-index, "clock_show_hour_ticks", c ? "true" : "false"); }
+                                }
+                                LabeledCheckBox {
+                                    text: "Show minor ticks";
+                                    checked: root.selected-widget.clock-show-minor-ticks;
+                                    toggled(c) => { root.widget-field(root.selected-index, "clock_show_minor_ticks", c ? "true" : "false"); }
+                                }
+                                LabeledCheckBox {
+                                    text: "Show numbers";
+                                    checked: root.selected-widget.clock-show-numbers;
+                                    toggled(c) => { root.widget-field(root.selected-index, "clock_show_numbers", c ? "true" : "false"); }
+                                }
+                                RgbaRow {
+                                    title: "Hour tick color (R / G / B / A)";
+                                    r: root.selected-widget.tick-color-r;
+                                    g: root.selected-widget.tick-color-g;
+                                    b: root.selected-widget.tick-color-b;
+                                    a: root.selected-widget.tick-color-a;
+                                    edited(ch, v) => { root.widget-field(root.selected-index, "tick_color_" + ch, v); }
+                                }
+                                RgbaRow {
+                                    title: "Minor tick color (R / G / B / A)";
+                                    r: root.selected-widget.clock-minor-tick-r;
+                                    g: root.selected-widget.clock-minor-tick-g;
+                                    b: root.selected-widget.clock-minor-tick-b;
+                                    a: root.selected-widget.clock-minor-tick-a;
+                                    edited(ch, v) => { root.widget-field(root.selected-index, "clock_minor_tick_" + ch, v); }
+                                }
+                                RgbaRow {
+                                    title: "Hour hand color (R / G / B / A)";
+                                    r: root.selected-widget.needle-color-r;
+                                    g: root.selected-widget.needle-color-g;
+                                    b: root.selected-widget.needle-color-b;
+                                    a: root.selected-widget.needle-color-a;
+                                    edited(ch, v) => { root.widget-field(root.selected-index, "needle_color_" + ch, v); }
+                                }
+                                RgbaRow {
+                                    title: "Minute hand color (R / G / B / A)";
+                                    r: root.selected-widget.needle-border-r;
+                                    g: root.selected-widget.needle-border-g;
+                                    b: root.selected-widget.needle-border-b;
+                                    a: root.selected-widget.needle-border-a;
+                                    edited(ch, v) => { root.widget-field(root.selected-index, "needle_border_" + ch, v); }
+                                }
+                                RgbaRow {
+                                    title: "Second hand color (R / G / B / A)";
+                                    r: root.selected-widget.clock-second-hand-r;
+                                    g: root.selected-widget.clock-second-hand-g;
+                                    b: root.selected-widget.clock-second-hand-b;
+                                    a: root.selected-widget.clock-second-hand-a;
+                                    edited(ch, v) => { root.widget-field(root.selected-index, "clock_second_hand_" + ch, v); }
+                                }
+                                RgbaRow {
+                                    title: "Hub color (R / G / B / A)";
+                                    r: root.selected-widget.clock-hub-r;
+                                    g: root.selected-widget.clock-hub-g;
+                                    b: root.selected-widget.clock-hub-b;
+                                    a: root.selected-widget.clock-hub-a;
+                                    edited(ch, v) => { root.widget-field(root.selected-index, "clock_hub_" + ch, v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Hour hand width";
+                                    value: root.selected-widget.clock-hour-hand-width;
+                                    minimum: 1;
+                                    maximum: 40;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_hour_hand_width", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Minute hand width";
+                                    value: root.selected-widget.clock-minute-hand-width;
+                                    minimum: 1;
+                                    maximum: 40;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_minute_hand_width", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Second hand width";
+                                    value: root.selected-widget.clock-second-hand-width;
+                                    minimum: 1;
+                                    maximum: 40;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_second_hand_width", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Hour hand length %";
+                                    value: root.selected-widget.clock-hour-length-pct;
+                                    minimum: 10;
+                                    maximum: 120;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_hour_length_pct", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Minute hand length %";
+                                    value: root.selected-widget.clock-minute-length-pct;
+                                    minimum: 10;
+                                    maximum: 120;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_minute_length_pct", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Second hand length %";
+                                    value: root.selected-widget.clock-second-length-pct;
+                                    minimum: 10;
+                                    maximum: 120;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_second_length_pct", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Hour tick length %";
+                                    value: root.selected-widget.clock-hour-tick-length-pct;
+                                    minimum: 0;
+                                    maximum: 50;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_hour_tick_length_pct", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Minor tick length %";
+                                    value: root.selected-widget.clock-minor-tick-length-pct;
+                                    minimum: 0;
+                                    maximum: 50;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_minor_tick_length_pct", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Hour tick width";
+                                    value: root.selected-widget.clock-hour-tick-width;
+                                    minimum: 1;
+                                    maximum: 20;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_hour_tick_width", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Minor tick width";
+                                    value: root.selected-widget.clock-minor-tick-width;
+                                    minimum: 1;
+                                    maximum: 20;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_minor_tick_width", v); }
+                                }
+                                LabeledSpinBox {
+                                    label: "Hub radius";
+                                    value: root.selected-widget.clock-hub-radius;
+                                    minimum: 0;
+                                    maximum: 40;
+                                    edited(v) => { root.widget-field(root.selected-index, "clock_hub_radius", v); }
+                                }
                             }
 
                             if root.selected-widget.kind == "radial_gauge"

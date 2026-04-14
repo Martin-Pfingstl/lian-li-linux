@@ -148,10 +148,12 @@ pub(super) fn load_font_from_disk(path: &Path) -> Result<Font<'static>, MediaErr
         .ok_or_else(|| MediaError::Sensor(format!("font '{}' parse failed", path.display())))
 }
 
-pub(super) fn widget_font_ref(kind: &WidgetKind) -> Option<&FontRef> {
+pub(super) fn widget_font_refs(kind: &WidgetKind) -> Vec<&FontRef> {
     match kind {
-        WidgetKind::Label { font, .. } | WidgetKind::ValueText { font, .. } => Some(font),
-        _ => None,
+        WidgetKind::Label { font, .. } | WidgetKind::ValueText { font, .. } => vec![font],
+        WidgetKind::ClockDigital { font, .. } => vec![font],
+        WidgetKind::ClockAnalog { numbers_font, .. } => vec![numbers_font],
+        _ => Vec::new(),
     }
 }
 

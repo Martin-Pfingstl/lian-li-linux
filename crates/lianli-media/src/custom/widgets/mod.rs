@@ -5,6 +5,8 @@
 //! frame (with optional rotation).
 
 pub(super) mod bar;
+pub(super) mod clock_analog;
+pub(super) mod clock_digital;
 pub(super) mod core_bars;
 pub(super) mod image_widget;
 pub(super) mod label;
@@ -247,6 +249,85 @@ pub(super) fn draw_widget(
         }
         WidgetKind::Video { opacity, .. } => {
             video_widget::draw(&mut sub, state, *opacity, elapsed_ms);
+        }
+        WidgetKind::ClockDigital {
+            format,
+            font,
+            font_size,
+            color,
+            align,
+            letter_spacing,
+        } => {
+            let f = resolve_font(font, fonts, default_font);
+            clock_digital::draw(
+                &mut sub,
+                format,
+                f,
+                *font_size * uniform_scale,
+                *color,
+                *align,
+                ww,
+                wh,
+                *letter_spacing * uniform_scale,
+            );
+        }
+        WidgetKind::ClockAnalog {
+            face_color,
+            tick_color,
+            minor_tick_color,
+            hour_hand_color,
+            minute_hand_color,
+            second_hand_color,
+            hub_color,
+            numbers_color,
+            numbers_font,
+            numbers_font_size,
+            show_seconds,
+            show_hour_ticks,
+            show_minor_ticks,
+            show_numbers,
+            hour_hand_width,
+            minute_hand_width,
+            second_hand_width,
+            hour_hand_length_pct,
+            minute_hand_length_pct,
+            second_hand_length_pct,
+            hour_tick_length_pct,
+            minor_tick_length_pct,
+            hour_tick_width,
+            minor_tick_width,
+            hub_radius,
+        } => {
+            let nf = resolve_font(numbers_font, fonts, default_font);
+            clock_analog::draw(
+                &mut sub,
+                *face_color,
+                *tick_color,
+                *minor_tick_color,
+                *hour_hand_color,
+                *minute_hand_color,
+                *second_hand_color,
+                *hub_color,
+                *numbers_color,
+                nf,
+                *numbers_font_size,
+                *show_seconds,
+                *show_hour_ticks,
+                *show_minor_ticks,
+                *show_numbers,
+                *hour_hand_width,
+                *minute_hand_width,
+                *second_hand_width,
+                *hour_hand_length_pct,
+                *minute_hand_length_pct,
+                *second_hand_length_pct,
+                *hour_tick_length_pct,
+                *minor_tick_length_pct,
+                *hour_tick_width,
+                *minor_tick_width,
+                *hub_radius,
+                uniform_scale,
+            );
         }
     }
 

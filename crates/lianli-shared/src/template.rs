@@ -217,6 +217,71 @@ pub enum WidgetKind {
         #[serde(default)]
         fit: ImageFit,
     },
+    ClockDigital {
+        #[serde(default = "default_clock_format")]
+        format: String,
+        #[serde(default)]
+        font: FontRef,
+        font_size: f32,
+        #[serde(with = "rgba_serde")]
+        color: [u8; 4],
+        #[serde(default)]
+        align: TextAlign,
+        #[serde(default)]
+        letter_spacing: f32,
+    },
+    ClockAnalog {
+        #[serde(with = "rgba_serde", default = "default_clock_face_color")]
+        face_color: [u8; 4],
+        #[serde(with = "rgba_serde", default = "default_clock_tick_color")]
+        tick_color: [u8; 4],
+        #[serde(with = "rgba_serde", default = "default_clock_tick_color")]
+        minor_tick_color: [u8; 4],
+        #[serde(with = "rgba_serde", default = "default_clock_hand_color")]
+        hour_hand_color: [u8; 4],
+        #[serde(with = "rgba_serde", default = "default_clock_hand_color")]
+        minute_hand_color: [u8; 4],
+        #[serde(with = "rgba_serde", default = "default_clock_second_color")]
+        second_hand_color: [u8; 4],
+        #[serde(with = "rgba_serde", default = "default_clock_hand_color")]
+        hub_color: [u8; 4],
+        #[serde(with = "rgba_serde", default = "default_clock_numbers_color")]
+        numbers_color: [u8; 4],
+        #[serde(default)]
+        numbers_font: FontRef,
+        #[serde(default = "default_clock_numbers_size")]
+        numbers_font_size: f32,
+        #[serde(default = "default_true")]
+        show_seconds: bool,
+        #[serde(default = "default_true")]
+        show_hour_ticks: bool,
+        #[serde(default = "default_true")]
+        show_minor_ticks: bool,
+        #[serde(default)]
+        show_numbers: bool,
+        #[serde(default = "default_clock_hand_width_hour")]
+        hour_hand_width: f32,
+        #[serde(default = "default_clock_hand_width_minute")]
+        minute_hand_width: f32,
+        #[serde(default = "default_clock_hand_width_second")]
+        second_hand_width: f32,
+        #[serde(default = "default_clock_hand_length_hour")]
+        hour_hand_length_pct: f32,
+        #[serde(default = "default_clock_hand_length_minute")]
+        minute_hand_length_pct: f32,
+        #[serde(default = "default_clock_hand_length_second")]
+        second_hand_length_pct: f32,
+        #[serde(default = "default_clock_tick_length_hour")]
+        hour_tick_length_pct: f32,
+        #[serde(default = "default_clock_tick_length_minor")]
+        minor_tick_length_pct: f32,
+        #[serde(default = "default_clock_tick_width_hour")]
+        hour_tick_width: f32,
+        #[serde(default = "default_clock_tick_width_minor")]
+        minor_tick_width: f32,
+        #[serde(default = "default_clock_hub_radius")]
+        hub_radius: f32,
+    },
 }
 
 fn default_value_format() -> String {
@@ -257,6 +322,78 @@ fn default_needle_border_width() -> f32 {
 
 fn default_opacity() -> f32 {
     1.0
+}
+
+fn default_clock_format() -> String {
+    "%H:%M".to_string()
+}
+
+fn default_clock_face_color() -> [u8; 4] {
+    [30, 30, 30, 255]
+}
+
+fn default_clock_tick_color() -> [u8; 4] {
+    [220, 220, 220, 255]
+}
+
+fn default_clock_hand_color() -> [u8; 4] {
+    [240, 240, 240, 255]
+}
+
+fn default_clock_second_color() -> [u8; 4] {
+    [220, 40, 40, 255]
+}
+
+fn default_clock_numbers_color() -> [u8; 4] {
+    [230, 230, 230, 255]
+}
+
+fn default_clock_numbers_size() -> f32 {
+    24.0
+}
+
+fn default_clock_hand_width_hour() -> f32 {
+    6.0
+}
+
+fn default_clock_hand_width_minute() -> f32 {
+    4.0
+}
+
+fn default_clock_hand_width_second() -> f32 {
+    2.0
+}
+
+fn default_clock_hand_length_hour() -> f32 {
+    0.55
+}
+
+fn default_clock_hand_length_minute() -> f32 {
+    0.8
+}
+
+fn default_clock_hand_length_second() -> f32 {
+    0.9
+}
+
+fn default_clock_tick_length_hour() -> f32 {
+    0.12
+}
+
+fn default_clock_tick_length_minor() -> f32 {
+    0.05
+}
+
+fn default_clock_tick_width_hour() -> f32 {
+    3.0
+}
+
+fn default_clock_tick_width_minor() -> f32 {
+    1.5
+}
+
+fn default_clock_hub_radius() -> f32 {
+    6.0
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -303,6 +440,8 @@ impl WidgetKind {
             Self::CoreBars { .. } => "core_bars",
             Self::Image { .. } => "image",
             Self::Video { .. } => "video",
+            Self::ClockDigital { .. } => "clock_digital",
+            Self::ClockAnalog { .. } => "clock_analog",
         }
     }
 
@@ -321,6 +460,8 @@ impl WidgetKind {
             "core_bars" => "Core Usage",
             "image" => "Image",
             "video" => "Video",
+            "clock_digital" => "Clock (Digital)",
+            "clock_analog" => "Clock (Analog)",
             _ => "Widget",
         }
     }
@@ -343,6 +484,8 @@ impl WidgetKind {
             "core_bars",
             "image",
             "video",
+            "clock_digital",
+            "clock_analog",
         ]
     }
 
