@@ -29,7 +29,12 @@ jobs:
           pkg-config \
           nasm \
           libjpeg-turbo8 \
-          libjpeg-turbo8-dev
+          libjpeg-turbo8-dev \
+          libavcodec-dev \
+          libavformat-dev \
+          libswscale-dev \
+          libavutil-dev \
+          libevdi0-dev
 
     - name: Build
       run: cargo build --verbose

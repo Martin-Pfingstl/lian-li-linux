@@ -64,10 +64,12 @@ additionally driven as a native secondary monitor via [evdi](https://github.com/
 The daemon auto-attaches an evdi virtual output on detection, the device shows up in your
 compositor's display settings with its real EDID, and any window can be dragged onto it.
 
-Requirements:
-- `evdi` kernel module loaded (DKMS package: `evdi-dkms` on Arch, `evdi-dkms` on Debian/Ubuntu)
-- `libevdi` userspace library (`libevdi` / `libevdi-dev`) - auto installed on Arch
-- System `ffmpeg` libraries (libavcodec/libavformat/libswscale) for H.264 encoding
+Requirements (only needed if you have a desktop-mode device):
+- `evdi-dkms` — kernel module for the virtual display. **Optional**: the daemon runs fine without
+  it, but attach will fail for desktop-mode devices and they'll be skipped.
+- `libevdi` userspace library — required (daemon binary is linked against it)
+- System `ffmpeg` libraries (libavcodec/libavformat/libswscale) for H.264 encoding — already
+  pulled in by the base `ffmpeg` dependency.
 
 ### Other
 
@@ -124,23 +126,24 @@ git clone --recurse-submodules https://github.com/sgtaziz/lian-li-linux.git && c
 ```bash
 # Arch
 sudo pacman -S hidapi libusb ffmpeg fontconfig mesa libxkbcommon wayland libx11 libinput libdrm clang cmake pkg-config
-# For desktop-mode virtual display support (optional):
-yay -S evdi libevdi  # AUR
+yay -S libevdi           # AUR - required to build/link the daemon
+yay -S evdi-dkms         # AUR - optional, only needed at runtime for desktop-mode devices
 
 # Ubuntu / Debian
 sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
   libxkbcommon-dev libwayland-dev libx11-dev libinput-dev libdrm-dev \
   libgl-dev libegl-dev clang cmake pkg-config ffmpeg \
   libavcodec-dev libavformat-dev libswscale-dev libavutil-dev \
-  evdi-dkms libevdi0-dev     # desktop-mode virtual display (optional)
+  libevdi0-dev              # required to build/link the daemon
+sudo apt install evdi-dkms  # optional, only needed at runtime for desktop-mode devices
 
 # Fedora
 sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
   mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg \
   ffmpeg-devel
-# evdi is not packaged in Fedora repos — build from source if desired:
-# https://github.com/DisplayLink/evdi
+# evdi is not packaged in Fedora repos — build libevdi from source to link the daemon:
+#   https://github.com/DisplayLink/evdi  (evdi-dkms is only needed at runtime)
 ```
 
 3) Build:
