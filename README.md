@@ -74,6 +74,14 @@ Requirements:
 The daemon will still start without the kernel module loaded, but desktop-mode devices (HydroShift II,
 Lancool 207, Universal Screen 8.8") won't get attached as virtual displays until the module is present.
 
+Because `/sys/devices/evdi/add` is root-only, the package also ships a small root oneshot
+`lianli-evdi-setup.service` that pre-creates one evdi node at boot. The per-user daemon then
+opens the existing node unprivileged. Enable it alongside the daemon:
+
+```bash
+sudo systemctl enable --now lianli-evdi-setup.service
+```
+
 ### Other
 
 | Device | RGB | Tested |
@@ -109,6 +117,8 @@ Or with any AUR helper (`paru`, `trizen`, etc.). This installs both binaries, ud
 ```bash
 sudo udevadm control --reload-rules && sudo udevadm trigger
 sudo systemctl enable --now lianli-daemon@$USER.service
+# If you have a desktop-mode device (HydroShift II, Lancool 207, Universal Screen):
+sudo systemctl enable --now lianli-evdi-setup.service
 ```
 
 The daemon runs as a templated system service (`lianli-daemon@USER.service`) so it starts independently of user-session login, but still runs under your user account and reads `~/.config/lianli/config.json`.
@@ -169,8 +179,11 @@ sudo install -Dm755 target/release/lianli-daemon /usr/bin/lianli-daemon
 
 # Install and start templated system systemd service
 sudo install -Dm644 systemd/lianli-daemon@.service /etc/systemd/system/lianli-daemon@.service
+# Optional: evdi setup oneshot for desktop-mode virtual display support
+sudo install -Dm644 systemd/lianli-evdi-setup.service /etc/systemd/system/lianli-evdi-setup.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now lianli-daemon@$USER.service
+sudo systemctl enable --now lianli-evdi-setup.service   # if you have a desktop-mode device
 ```
 
 A default config is created automatically at `~/.config/lianli/config.json` on first run.
