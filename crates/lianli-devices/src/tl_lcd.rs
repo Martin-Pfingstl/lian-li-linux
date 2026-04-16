@@ -163,7 +163,7 @@ impl TlLcdDevice {
 
     /// Read firmware version string.
     pub fn read_firmware(&self) -> Result<String> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         dev.read_flush();
 
         let pkt = build_packet(CMD_GET_PRODUCT_INFO, 0, 0, &[]);
@@ -247,7 +247,7 @@ impl TlLcdDevice {
         let total_size = data.len();
         let mut offset = 0;
         let mut packet_num: u32 = 0;
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
 
         while offset < total_size {
             let remaining = total_size - offset;
@@ -281,7 +281,7 @@ impl TlLcdDevice {
 
     /// Send a command with payload and don't wait for any response.
     fn send_command_no_response(&self, cmd: u8, payload: &[u8]) -> Result<()> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         let pkt = build_packet(cmd, payload.len() as u32, 0, payload);
         dev.write(&pkt).context("TLLCD: write command (no resp)")?;
         Ok(())
@@ -289,7 +289,7 @@ impl TlLcdDevice {
 
     /// Send a command with payload and read response.
     fn send_command_with_response(&self, cmd: u8, payload: &[u8]) -> Result<Vec<u8>> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         let pkt = build_packet(cmd, payload.len() as u32, 0, payload);
 
         dev.write(&pkt).context("TLLCD: write command")?;

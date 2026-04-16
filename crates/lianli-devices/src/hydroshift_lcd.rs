@@ -276,7 +276,7 @@ impl HydroShiftLcdController {
     /// Check if the LCD is ready to receive frames (B-command 0x17).
     /// Returns true if available, false if not, or error on timeout.
     pub fn is_lcd_available(&self) -> Result<bool> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
 
         let mut pkt = vec![0u8; B_PACKET_SIZE];
         pkt[0] = REPORT_ID_B;
@@ -335,7 +335,7 @@ impl HydroShiftLcdController {
     }
 
     fn read_firmware_internal(&self, timeout_ms: i32) -> Result<String> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
 
         let mut pkt = [0u8; A_PACKET_SIZE];
         pkt[0] = REPORT_ID_A;
@@ -390,7 +390,7 @@ impl HydroShiftLcdController {
         let copy_len = data.len().min(58);
         pkt[A_HEADER_LEN..A_HEADER_LEN + copy_len].copy_from_slice(&data[..copy_len]);
 
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         let written = dev.write(&pkt).context("AIO LCD: write A-command")?;
         debug!(
             "A-cmd {cmd:#04x}: wrote {written} bytes, payload={:02x?}",
@@ -428,7 +428,7 @@ impl HydroShiftLcdController {
         let total_size = data.len();
         let mut offset = 0;
         let mut packet_num: u32 = 0;
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
 
         loop {
             let remaining = total_size.saturating_sub(offset);
@@ -722,7 +722,7 @@ impl AioLcdRgbController {
         let copy_len = data.len().min(58);
         pkt[A_HEADER_LEN..A_HEADER_LEN + copy_len].copy_from_slice(&data[..copy_len]);
 
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         dev.write(&pkt).context("AIO LCD RGB: write")?;
 
         let mut buf = [0u8; A_PACKET_SIZE];

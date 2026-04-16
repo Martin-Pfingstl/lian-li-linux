@@ -274,7 +274,7 @@ impl Ene6k77Controller {
     /// Set fan speeds for all 4 groups atomically (single lock hold so
     /// RGB writes from another thread can't interleave between groups).
     pub fn set_all_speeds(&self, duties: &[u8; 4]) -> Result<()> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         for (group, &duty) in duties.iter().enumerate() {
             let data = [REPORT_ID, 0x20 | (group as u8), 0x00, duty];
             dev.send_feature_report(&data)
@@ -465,14 +465,14 @@ impl Ene6k77Controller {
     }
 
     fn send_feature(&self, data: &[u8]) -> Result<()> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         dev.send_feature_report(data)
             .context("ENE 6K77: send feature report")?;
         Ok(())
     }
 
     fn send_output(&self, data: &[u8]) -> Result<()> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         dev.write(data).context("ENE 6K77: send output report")?;
         Ok(())
     }

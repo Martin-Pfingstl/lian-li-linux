@@ -53,6 +53,43 @@ fn open_any(ids: &[(u16, u16)]) -> Result<UsbTransport> {
         .unwrap_or_else(|| anyhow::anyhow!("no VID:PID pairs to try")))
 }
 
+/// Reopen and swap a dongle transport in place after the underlying USB
+/// handle goes stale (suspend/resume, hub reset, unplug+replug).
+fn reopen_transport(arc: &Arc<Mutex<UsbTransport>>, ids: &[(u16, u16)], name: &str) -> Result<()> {
+    let mut new_transport = open_any(ids).context(format!("reopening {name} dongle"))?;
+    new_transport.detach_and_configure(name)?;
+    let mut guard = arc.lock();
+    *guard = new_transport;
+    Ok(())
+}
+
+/// Run a USB op on a dongle transport with one-shot reopen + retry on failure.
+/// `op` must be safe to call twice (idempotent at the protocol level).
+fn with_transport_recovery<F, R>(
+    arc: &Arc<Mutex<UsbTransport>>,
+    ids: &[(u16, u16)],
+    name: &str,
+    mut op: F,
+) -> Result<R>
+where
+    F: FnMut(&UsbTransport) -> Result<R>,
+{
+    let first = {
+        let handle = arc.lock();
+        op(&handle)
+    };
+    match first {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            warn!("{name} transport op failed ({e}); attempting reopen");
+            reopen_transport(arc, ids, name).context("reopen after stale handle")?;
+            info!("{name} transport reopened, retrying");
+            let handle = arc.lock();
+            op(&handle)
+        }
+    }
+}
+
 /// Wireless fan device type, determines minimum duty and RPM curves.
 ///
 /// Byte ranges for classifying fan type:
@@ -638,29 +675,26 @@ impl WirelessController {
         }
 
         if let Some(tx) = &self.tx {
-            let handle = tx.lock();
-            handle
-                .write(&CMD_VIDEO_START, USB_TIMEOUT)
-                .context("sending TX video start")?;
-            thread::sleep(Duration::from_millis(2));
-
-            let devices = self.discovered_devices.lock();
-            let device_count = devices.len().max(1);
+            let device_count = self.discovered_devices.lock().len().max(1);
             let master_ch = *self.master_channel.lock();
-
-            for device_idx in 0..device_count {
-                let mut cmd = vec![0u8; 64];
-                cmd[0] = USB_CMD_SEND_RF;
-                cmd[1] = device_idx as u8;
-                cmd[2] = master_ch;
-                cmd[3] = 0xFF; // Prep marker
+            with_transport_recovery(tx, &TX_IDS, "TX", |handle| {
                 handle
-                    .write(&cmd, USB_TIMEOUT)
-                    .context("sending TX prep command")?;
-                thread::sleep(Duration::from_millis(1));
-            }
-
-            drop(handle);
+                    .write(&CMD_VIDEO_START, USB_TIMEOUT)
+                    .context("sending TX video start")?;
+                thread::sleep(Duration::from_millis(2));
+                for device_idx in 0..device_count {
+                    let mut cmd = vec![0u8; 64];
+                    cmd[0] = USB_CMD_SEND_RF;
+                    cmd[1] = device_idx as u8;
+                    cmd[2] = master_ch;
+                    cmd[3] = 0xFF; // Prep marker
+                    handle
+                        .write(&cmd, USB_TIMEOUT)
+                        .context("sending TX prep command")?;
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Ok(())
+            })?;
             self.video_mode_active.store(true, Ordering::Release);
             info!("Video mode activated with {device_count} device(s)");
         }
@@ -674,12 +708,12 @@ impl WirelessController {
                 (&*CMD_RX_QUERY_37, true),
                 (&*CMD_RX_LCD_MODE, false),
             ] {
-                {
-                    let handle = rx.lock();
+                with_transport_recovery(rx, &RX_IDS, "RX", |handle| {
                     handle
                         .write(cmd, USB_TIMEOUT)
                         .context("sending RX command")?;
-                }
+                    Ok(())
+                })?;
                 thread::sleep(Duration::from_millis(2));
                 if capture {
                     let mut buf = [0u8; 64];
@@ -776,12 +810,13 @@ impl WirelessController {
         rf_data[15] = master_ch;
         rf_data[16] = new_rx;
 
-        let handle = tx.lock();
-        for _ in 0..3 {
-            self.send_rf_packet(&handle, &device, &rf_data)?;
-            thread::sleep(Duration::from_millis(50));
-        }
-        drop(handle);
+        with_transport_recovery(tx, &TX_IDS, "TX", |handle| {
+            for _ in 0..3 {
+                self.send_rf_packet(handle, &device, &rf_data)?;
+                thread::sleep(Duration::from_millis(50));
+            }
+            Ok(())
+        })?;
 
         self.save_rf_config()?;
 
@@ -823,24 +858,25 @@ impl WirelessController {
         rf_data[8..14].copy_from_slice(&master_mac);
         rf_data[14] = 0xFF;
 
-        let handle = tx.lock();
-        for _ in 0..3 {
-            for chunk_idx in 0..RF_CHUNKS as u8 {
-                let mut packet = vec![0u8; 64];
-                packet[0] = USB_CMD_SEND_RF;
-                packet[1] = chunk_idx;
-                packet[2] = master_ch;
-                packet[3] = 0xFF;
-                let start = chunk_idx as usize * RF_CHUNK_SIZE;
-                packet[4..64].copy_from_slice(&rf_data[start..start + RF_CHUNK_SIZE]);
-                handle
-                    .write(&packet, USB_TIMEOUT)
-                    .context("sending SaveConfig")?;
-                thread::sleep(Duration::from_millis(1));
+        with_transport_recovery(tx, &TX_IDS, "TX", |handle| {
+            for _ in 0..3 {
+                for chunk_idx in 0..RF_CHUNKS as u8 {
+                    let mut packet = vec![0u8; 64];
+                    packet[0] = USB_CMD_SEND_RF;
+                    packet[1] = chunk_idx;
+                    packet[2] = master_ch;
+                    packet[3] = 0xFF;
+                    let start = chunk_idx as usize * RF_CHUNK_SIZE;
+                    packet[4..64].copy_from_slice(&rf_data[start..start + RF_CHUNK_SIZE]);
+                    handle
+                        .write(&packet, USB_TIMEOUT)
+                        .context("sending SaveConfig")?;
+                    thread::sleep(Duration::from_millis(1));
+                }
+                thread::sleep(Duration::from_millis(200));
             }
-            thread::sleep(Duration::from_millis(200));
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Get a snapshot of a single device by its MAC address.
@@ -932,23 +968,25 @@ impl WirelessController {
         rf_data[17..21].copy_from_slice(&pwm);
 
         // Send as 4 USB packets (60-byte chunks)
-        let handle = tx.lock();
-        for chunk_idx in 0..RF_CHUNKS as u8 {
-            let mut packet = vec![0u8; 64];
-            packet[0] = USB_CMD_SEND_RF;
-            packet[1] = chunk_idx; // Sequence number
-            packet[2] = device.channel; // Device's current RF channel
-            packet[3] = device.rx_type; // Device's RX type
+        with_transport_recovery(tx, &TX_IDS, "TX", |handle| {
+            for chunk_idx in 0..RF_CHUNKS as u8 {
+                let mut packet = vec![0u8; 64];
+                packet[0] = USB_CMD_SEND_RF;
+                packet[1] = chunk_idx; // Sequence number
+                packet[2] = device.channel; // Device's current RF channel
+                packet[3] = device.rx_type; // Device's RX type
 
-            let start = chunk_idx as usize * RF_CHUNK_SIZE;
-            let end = start + RF_CHUNK_SIZE;
-            packet[4..64].copy_from_slice(&rf_data[start..end]);
+                let start = chunk_idx as usize * RF_CHUNK_SIZE;
+                let end = start + RF_CHUNK_SIZE;
+                packet[4..64].copy_from_slice(&rf_data[start..end]);
 
-            handle
-                .write(&packet, USB_TIMEOUT)
-                .context("sending fan speed RF packet")?;
-            thread::sleep(Duration::from_millis(1));
-        }
+                handle
+                    .write(&packet, USB_TIMEOUT)
+                    .context("sending fan speed RF packet")?;
+                thread::sleep(Duration::from_millis(1));
+            }
+            Ok(())
+        })?;
 
         debug!(
             "Set fan PWM for {} (rx={}, ch={}): {:?}",
@@ -1074,61 +1112,61 @@ impl WirelessController {
         const LZO_RF_VALID_LEN: usize = 220;
         let total_pk_num = (compressed.len() as f64 / LZO_RF_VALID_LEN as f64).ceil() as u8;
 
-        let mut offset: usize = 0;
-        let mut index: u8 = 0;
-
+        let mut packets_sent: u8 = 0;
         // Hold TX lock for the entire transfer to prevent interleaving
         // with PWM or other TX operations.
-        let handle = tx.lock();
+        with_transport_recovery(tx, &TX_IDS, "TX", |handle| {
+            let mut offset: usize = 0;
+            let mut index: u8 = 0;
+            while offset < compressed.len() || index == 0 {
+                let mut rf_data = vec![0u8; RF_DATA_SIZE];
 
-        while offset < compressed.len() || index == 0 {
-            let mut rf_data = vec![0u8; RF_DATA_SIZE];
+                rf_data[0] = RF_SELECT;
+                rf_data[1] = RF_SET_RGB;
+                rf_data[2..8].copy_from_slice(&device.mac);
+                rf_data[8..14].copy_from_slice(&master_mac);
+                rf_data[14..18].copy_from_slice(effect_index);
+                rf_data[18] = index;
+                rf_data[19] = total_pk_num + 1;
 
-            rf_data[0] = RF_SELECT;
-            rf_data[1] = RF_SET_RGB;
-            rf_data[2..8].copy_from_slice(&device.mac);
-            rf_data[8..14].copy_from_slice(&master_mac);
-            rf_data[14..18].copy_from_slice(effect_index);
-            rf_data[18] = index;
-            rf_data[19] = total_pk_num + 1;
+                if index == 0 {
+                    // Header packet: metadata
+                    let data_len = compressed.len() as u32;
+                    rf_data[20] = (data_len >> 24) as u8;
+                    rf_data[21] = ((data_len >> 16) & 0xFF) as u8;
+                    rf_data[22] = ((data_len >> 8) & 0xFF) as u8;
+                    rf_data[23] = (data_len & 0xFF) as u8;
+                    rf_data[24] = 0;
+                    rf_data[25] = (total_frames >> 8) as u8;
+                    rf_data[26] = (total_frames & 0xFF) as u8;
+                    rf_data[27] = led_num;
+                    rf_data[32] = (interval_ms >> 8) as u8;
+                    rf_data[33] = (interval_ms & 0xFF) as u8;
 
-            if index == 0 {
-                // Header packet: metadata
-                let data_len = compressed.len() as u32;
-                rf_data[20] = (data_len >> 24) as u8;
-                rf_data[21] = ((data_len >> 16) & 0xFF) as u8;
-                rf_data[22] = ((data_len >> 8) & 0xFF) as u8;
-                rf_data[23] = (data_len & 0xFF) as u8;
-                rf_data[24] = 0;
-                rf_data[25] = (total_frames >> 8) as u8;
-                rf_data[26] = (total_frames & 0xFF) as u8;
-                rf_data[27] = led_num;
-                rf_data[32] = (interval_ms >> 8) as u8;
-                rf_data[33] = (interval_ms & 0xFF) as u8;
-
-                let repeats = header_repeats.max(1);
-                let gap_ms = if repeats <= 2 { 2 } else { 20 };
-                for repeat in 0..repeats {
-                    self.send_rf_packet(&handle, &device, &rf_data)?;
-                    if repeat < repeats - 1 {
-                        thread::sleep(Duration::from_millis(gap_ms));
+                    let repeats = header_repeats.max(1);
+                    let gap_ms = if repeats <= 2 { 2 } else { 20 };
+                    for repeat in 0..repeats {
+                        self.send_rf_packet(handle, &device, &rf_data)?;
+                        if repeat < repeats - 1 {
+                            thread::sleep(Duration::from_millis(gap_ms));
+                        }
                     }
+                } else {
+                    // Data packet: 220 bytes of compressed data
+                    let remaining = compressed.len() - offset;
+                    let chunk_len = remaining.min(LZO_RF_VALID_LEN);
+                    rf_data[20..20 + chunk_len]
+                        .copy_from_slice(&compressed[offset..offset + chunk_len]);
+                    offset += LZO_RF_VALID_LEN;
+
+                    self.send_rf_packet(handle, &device, &rf_data)?;
                 }
-            } else {
-                // Data packet: 220 bytes of compressed data
-                let remaining = compressed.len() - offset;
-                let chunk_len = remaining.min(LZO_RF_VALID_LEN);
-                rf_data[20..20 + chunk_len]
-                    .copy_from_slice(&compressed[offset..offset + chunk_len]);
-                offset += LZO_RF_VALID_LEN;
 
-                self.send_rf_packet(&handle, &device, &rf_data)?;
+                index += 1;
             }
-
-            index += 1;
-        }
-
-        drop(handle);
+            packets_sent = index;
+            Ok(())
+        })?;
 
         debug!(
             "Sent RGB to {} ({} frame(s), {} LEDs, {} compressed, {} packets, {}ms interval)",
@@ -1136,7 +1174,7 @@ impl WirelessController {
             total_frames,
             led_num,
             compressed.len(),
-            index,
+            packets_sent,
             interval_ms
         );
         Ok(())
@@ -1237,11 +1275,14 @@ fn poll_and_discover(
     cmd[0] = USB_CMD_SEND_RF;
     cmd[1] = 0x01; // Page 1
 
+    with_transport_recovery(rx, &RX_IDS, "RX", |handle| {
+        handle.read_flush();
+        handle
+            .write(&cmd, USB_TIMEOUT)
+            .context("sending GetDev command")?;
+        Ok(())
+    })?;
     let handle = rx.lock();
-    handle.read_flush();
-    handle
-        .write(&cmd, USB_TIMEOUT)
-        .context("sending GetDev command")?;
 
     // Response: [0]=0x10, [1]=device_count, [2-3]=mobo_pwm or version, [4+]=42-byte records
     let mut response = [0u8; 512];

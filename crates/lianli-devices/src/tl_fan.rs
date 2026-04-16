@@ -250,7 +250,7 @@ impl TlFanController {
         Ok(())
     }
 
-    fn send_speed_locked(dev: &HidBackend, port: u8, fan_index: u8, duty: u8) -> Result<()> {
+    fn send_speed_locked(dev: &mut HidBackend, port: u8, fan_index: u8, duty: u8) -> Result<()> {
         let addr = (port << 4) | (fan_index & 0x0F);
         let pkt = Self::build_packet(CMD_SET_FAN_SPEED, &[addr, duty]);
         dev.read_flush();
@@ -284,10 +284,10 @@ impl TlFanController {
             .as_ref()
             .map(|hs| hs.port_fan_counts)
             .unwrap_or([1, 1, 1, 1]);
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         for (port, &duty) in duties.iter().take(4).enumerate() {
             for idx in 0..fan_counts[port] {
-                Self::send_speed_locked(&dev, port as u8, idx, duty)?;
+                Self::send_speed_locked(&mut *dev, port as u8, idx, duty)?;
             }
         }
         Ok(())
@@ -477,7 +477,7 @@ impl TlFanController {
     /// Send a command, try to read a response but ignore failure.
     fn send_command_quiet(&self, cmd: u8, data: &[u8]) -> Result<()> {
         let pkt = Self::build_packet(cmd, data);
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         dev.read_flush();
         dev.write(&pkt).context("TL Fan: write command")?;
         let mut buf = [0u8; PACKET_SIZE];
@@ -488,7 +488,7 @@ impl TlFanController {
     /// Send a command and read the synchronous response.
     fn send_command(&self, cmd: u8, data: &[u8]) -> Result<Vec<u8>> {
         let pkt = Self::build_packet(cmd, data);
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
 
         dev.read_flush();
 

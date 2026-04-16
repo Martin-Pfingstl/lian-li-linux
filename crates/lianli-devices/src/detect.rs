@@ -1,13 +1,43 @@
 use anyhow::Result;
 use hidapi::HidApi;
 use lianli_shared::device_id::{uses_hid, DeviceFamily, UsbId, KNOWN_DEVICES};
-use lianli_transport::{HidBackend, RusbHidTransport};
+use lianli_transport::{HidBackend, HidBackendKind, HidReopener, RusbHidTransport};
 use parking_lot::Mutex;
 use rusb::{Device, GlobalContext};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info, warn};
+
+/// Build a reopener that re-acquires the same HID device via hidapi by VID/PID.
+/// Used to recover from stale handles after USB suspend/resume.
+fn make_hidapi_reopener(vid: u16, pid: u16, family: DeviceFamily) -> HidReopener {
+    Arc::new(move || {
+        let api = HidApi::new().map_err(|e| anyhow::anyhow!("hidapi init: {e}"))?;
+        let det = find_hid_devices_by_family(&api, family)
+            .into_iter()
+            .find(|d| d.vid == vid && d.pid == pid)
+            .ok_or_else(|| {
+                anyhow::anyhow!("HID device {vid:04x}:{pid:04x} not enumerable on reopen")
+            })?;
+        let dev = api
+            .open_path(&det.path)
+            .map_err(|e| anyhow::anyhow!("hidapi open_path: {e}"))?;
+        Ok(HidBackendKind::Hidapi(dev))
+    })
+}
+
+/// Build a reopener that re-acquires the same HID device via the rusb backend.
+fn make_rusb_reopener(vid: u16, pid: u16, usage_page: Option<u16>) -> HidReopener {
+    Arc::new(move || {
+        let usb_dev = find_usb_device(vid, pid).ok_or_else(|| {
+            anyhow::anyhow!("USB device {vid:04x}:{pid:04x} not enumerable on reopen")
+        })?;
+        let transport = RusbHidTransport::open_by_usage(usb_dev, usage_page)
+            .map_err(|e| anyhow::anyhow!("rusb hid open: {e}"))?;
+        Ok(HidBackendKind::Rusb(transport))
+    })
+}
 
 /// A detected USB device with its identified family.
 #[derive(Debug)]
@@ -438,7 +468,12 @@ pub fn open_hid_lcd_device_rusb(
             Some(open_with_retry(&det.device, || {
                 let transport =
                     RusbHidTransport::open_by_usage(det.device.clone(), det.hid_usage_page)?;
-                let backend = Arc::new(Mutex::new(HidBackend::Rusb(transport)));
+                let backend = HidBackend::from_rusb(transport).with_reopener(make_rusb_reopener(
+                    det.vid,
+                    det.pid,
+                    det.hid_usage_page,
+                ));
+                let backend = Arc::new(Mutex::new(backend));
                 crate::hydroshift_lcd::HydroShiftLcdController::new(backend, pid)
                     .map(|d| Box::new(d) as Box<dyn crate::traits::LcdDevice>)
             }))
@@ -446,7 +481,12 @@ pub fn open_hid_lcd_device_rusb(
         DeviceFamily::TlLcd => Some(open_with_retry(&det.device, || {
             let transport =
                 RusbHidTransport::open_by_usage(det.device.clone(), det.hid_usage_page)?;
-            let backend = Arc::new(Mutex::new(HidBackend::Rusb(transport)));
+            let backend = HidBackend::from_rusb(transport).with_reopener(make_rusb_reopener(
+                det.vid,
+                det.pid,
+                det.hid_usage_page,
+            ));
+            let backend = Arc::new(Mutex::new(backend));
             let mut tl = crate::tl_lcd::TlLcdDevice::new(backend);
             crate::traits::LcdDevice::initialize(&mut tl)?;
             Ok(Box::new(tl) as Box<dyn crate::traits::LcdDevice>)
@@ -466,7 +506,9 @@ pub fn open_hidapi_with_retry<T>(
     for attempt in 0..=3u32 {
         match api.open_path(&det.path) {
             Ok(hid_dev) => {
-                return create_fn(HidBackend::Hidapi(hid_dev));
+                let backend = HidBackend::from_hidapi(hid_dev)
+                    .with_reopener(make_hidapi_reopener(det.vid, det.pid, det.family));
+                return create_fn(backend);
             }
             Err(e) if attempt < 3 => {
                 warn!(
@@ -504,9 +546,14 @@ pub fn open_hid_backend_hidapi(
 /// Open a shared HID backend via rusb with retry logic.
 /// Returns an `Arc<Mutex<HidBackend>>` that can be shared between multiple controllers.
 pub fn open_hid_backend_rusb(det: &DetectedDevice) -> Result<Arc<Mutex<HidBackend>>> {
+    let vid = det.vid;
+    let pid = det.pid;
+    let usage_page = det.hid_usage_page;
     open_with_retry(&det.device, || {
         let transport = RusbHidTransport::open_by_usage(det.device.clone(), det.hid_usage_page)?;
-        Ok(Arc::new(Mutex::new(HidBackend::Rusb(transport))))
+        let backend = HidBackend::from_rusb(transport)
+            .with_reopener(make_rusb_reopener(vid, pid, usage_page));
+        Ok(Arc::new(Mutex::new(backend)))
     })
 }
 

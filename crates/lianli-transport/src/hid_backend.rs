@@ -1,36 +1,96 @@
 use crate::RusbHidTransport;
 use hidapi::HidDevice;
+use std::sync::Arc;
+use tracing::{info, warn};
 
-pub enum HidBackend {
+/// Closure that produces a fresh inner backend after a stale-handle event
+/// (USB suspend/resume, hub reset, transient unplug).
+///
+/// Wired up at construction so the transport can self-heal without each
+/// controller having to plumb its own retry logic.
+pub type HidReopener = Arc<dyn Fn() -> anyhow::Result<HidBackendKind> + Send + Sync>;
+
+pub enum HidBackendKind {
     Hidapi(HidDevice),
     Rusb(RusbHidTransport),
 }
 
+pub struct HidBackend {
+    kind: HidBackendKind,
+    reopener: Option<HidReopener>,
+}
+
 impl HidBackend {
-    pub fn write(&self, data: &[u8]) -> anyhow::Result<usize> {
-        match self {
-            Self::Hidapi(dev) => dev.write(data).map_err(|e| anyhow::anyhow!("{e}")),
-            Self::Rusb(dev) => dev.write(data).map_err(|e| anyhow::anyhow!("{e}")),
+    pub fn from_hidapi(dev: HidDevice) -> Self {
+        Self {
+            kind: HidBackendKind::Hidapi(dev),
+            reopener: None,
+        }
+    }
+
+    pub fn from_rusb(transport: RusbHidTransport) -> Self {
+        Self {
+            kind: HidBackendKind::Rusb(transport),
+            reopener: None,
+        }
+    }
+
+    pub fn with_reopener(mut self, reopener: HidReopener) -> Self {
+        self.reopener = Some(reopener);
+        self
+    }
+
+    pub fn set_reopener(&mut self, reopener: HidReopener) {
+        self.reopener = Some(reopener);
+    }
+
+    fn try_reopen(&mut self) -> anyhow::Result<()> {
+        let reopener = self
+            .reopener
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no reopener configured"))?;
+        let new_kind = reopener().map_err(|e| anyhow::anyhow!("reopen: {e}"))?;
+        self.kind = new_kind;
+        Ok(())
+    }
+
+    fn do_write(&self, data: &[u8]) -> anyhow::Result<usize> {
+        match &self.kind {
+            HidBackendKind::Hidapi(dev) => dev.write(data).map_err(|e| anyhow::anyhow!("{e}")),
+            HidBackendKind::Rusb(dev) => dev.write(data).map_err(|e| anyhow::anyhow!("{e}")),
+        }
+    }
+
+    pub fn write(&mut self, data: &[u8]) -> anyhow::Result<usize> {
+        match self.do_write(data) {
+            Ok(n) => Ok(n),
+            Err(e) if self.reopener.is_some() => {
+                warn!("HID write failed ({e}); attempting reopen");
+                self.try_reopen()?;
+                info!("HID handle reopened, retrying write");
+                self.do_write(data)
+            }
+            Err(e) => Err(e),
         }
     }
 
     pub fn read_timeout(&self, buf: &mut [u8], timeout_ms: i32) -> anyhow::Result<usize> {
-        match self {
-            Self::Hidapi(dev) => dev
+        match &self.kind {
+            HidBackendKind::Hidapi(dev) => dev
                 .read_timeout(buf, timeout_ms)
                 .map_err(|e| anyhow::anyhow!("{e}")),
-            Self::Rusb(dev) => dev
+            HidBackendKind::Rusb(dev) => dev
                 .read_timeout(buf, timeout_ms)
                 .map_err(|e| anyhow::anyhow!("{e}")),
         }
     }
 
-    pub fn send_feature_report(&self, data: &[u8]) -> anyhow::Result<()> {
-        match self {
-            Self::Hidapi(dev) => dev
+    fn do_send_feature_report(&self, data: &[u8]) -> anyhow::Result<()> {
+        match &self.kind {
+            HidBackendKind::Hidapi(dev) => dev
                 .send_feature_report(data)
                 .map_err(|e| anyhow::anyhow!("{e}")),
-            Self::Rusb(dev) => {
+            HidBackendKind::Rusb(dev) => {
                 dev.send_feature_report(data)
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
                 Ok(())
@@ -38,23 +98,36 @@ impl HidBackend {
         }
     }
 
+    pub fn send_feature_report(&mut self, data: &[u8]) -> anyhow::Result<()> {
+        match self.do_send_feature_report(data) {
+            Ok(()) => Ok(()),
+            Err(e) if self.reopener.is_some() => {
+                warn!("HID send_feature_report failed ({e}); attempting reopen");
+                self.try_reopen()?;
+                info!("HID handle reopened, retrying send_feature_report");
+                self.do_send_feature_report(data)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn get_feature_report(&self, buf: &mut [u8]) -> anyhow::Result<usize> {
-        match self {
-            Self::Hidapi(dev) => dev
+        match &self.kind {
+            HidBackendKind::Hidapi(dev) => dev
                 .get_feature_report(buf)
                 .map_err(|e| anyhow::anyhow!("{e}")),
-            Self::Rusb(dev) => dev
+            HidBackendKind::Rusb(dev) => dev
                 .get_feature_report(buf)
                 .map_err(|e| anyhow::anyhow!("{e}")),
         }
     }
 
     pub fn get_input_report(&self, buf: &mut [u8]) -> anyhow::Result<usize> {
-        match self {
-            Self::Hidapi(dev) => dev
+        match &self.kind {
+            HidBackendKind::Hidapi(dev) => dev
                 .get_input_report(buf)
                 .map_err(|e| anyhow::anyhow!("{e}")),
-            Self::Rusb(dev) => dev
+            HidBackendKind::Rusb(dev) => dev
                 .get_input_report(buf)
                 .map_err(|e| anyhow::anyhow!("{e}")),
         }

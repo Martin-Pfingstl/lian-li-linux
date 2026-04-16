@@ -138,7 +138,7 @@ impl Galahad2TrinityController {
     }
 
     fn read_firmware(&self) -> Result<String> {
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         dev.read_flush();
 
         let mut pkt = [0u8; PACKET_SIZE];
@@ -276,7 +276,7 @@ impl Galahad2TrinityController {
         let copy_len = data.len().min(58);
         pkt[HEADER_LEN..HEADER_LEN + copy_len].copy_from_slice(&data[..copy_len]);
 
-        let dev = self.device.lock();
+        let mut dev = self.device.lock();
         dev.write(&pkt).context("Galahad2 Trinity: write")?;
 
         let mut buf = [0u8; PACKET_SIZE];
