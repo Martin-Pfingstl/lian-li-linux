@@ -977,11 +977,15 @@ fn wire_fan_callbacks(window: &MainWindow, _backend: &backend::BackendHandle, sh
             if let Some(w) = weak.upgrade() {
                 let model = w.get_fan_groups();
                 for i in 0..model.row_count() {
-                    if let Some(group_data) = model.row_data(i) {
+                    if let Some(mut group_data) = model.row_data(i) {
                         if group_data.device_id.as_str() == dev_id {
                             if let Some(mut slot_data) = group_data.slots.row_data(slot) {
                                 slot_data.pwm_percent = percent;
                                 group_data.slots.set_row_data(slot, slot_data);
+                            }
+                            if slot == 3 && group_data.has_pump_control {
+                                group_data.pump_slot.pwm_percent = percent;
+                                model.set_row_data(i, group_data);
                             }
                             break;
                         }
