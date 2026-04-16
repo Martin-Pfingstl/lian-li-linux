@@ -53,9 +53,21 @@ Both V1 (VID 0x0416) and V2 (VID 0x1A86) wireless dongles are supported. Binding
 | HydroShift II LCD Square | 480x480 | Yes | |
 | Lancool 207 Digital | 1472x720 | Yes | |
 | Universal Screen 8.8" | 1920x480 | Yes | |
-| Universal Screen 8.8" LED Ring | - | - | RGB detection only (control TBD) |
+| Universal Screen 8.8" LED Ring | - | Yes | RGB control supported |
 
 Devices stuck in desktop/display mode are detected and can be switched back to LCD mode via the GUI.
+
+### Desktop Mode (Virtual Display)
+
+Devices in desktop/display mode (HydroShift II, Lancool 207 Digital, Universal Screen 8.8") are
+additionally driven as a native secondary monitor via [evdi](https://github.com/DisplayLink/evdi).
+The daemon auto-attaches an evdi virtual output on detection, the device shows up in your
+compositor's display settings with its real EDID, and any window can be dragged onto it.
+
+Requirements:
+- `evdi` kernel module loaded (DKMS package: `evdi-dkms` on Arch, `evdi-dkms` on Debian/Ubuntu)
+- `libevdi` userspace library (`libevdi` / `libevdi-dev`) - auto installed on Arch
+- System `ffmpeg` libraries (libavcodec/libavformat/libswscale) for H.264 encoding
 
 ### Other
 
@@ -110,16 +122,23 @@ git clone --recurse-submodules https://github.com/sgtaziz/lian-li-linux.git && c
 ```bash
 # Arch
 sudo pacman -S hidapi libusb ffmpeg fontconfig mesa libxkbcommon wayland libx11 libinput libdrm clang cmake pkg-config
+# For desktop-mode virtual display support (optional):
+yay -S evdi libevdi  # AUR
 
 # Ubuntu / Debian
 sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
   libxkbcommon-dev libwayland-dev libx11-dev libinput-dev libdrm-dev \
-  libgl-dev libegl-dev clang cmake pkg-config ffmpeg
+  libgl-dev libegl-dev clang cmake pkg-config ffmpeg \
+  libavcodec-dev libavformat-dev libswscale-dev libavutil-dev \
+  evdi-dkms libevdi0-dev     # desktop-mode virtual display (optional)
 
 # Fedora
 sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
-  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg
+  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg \
+  ffmpeg-devel
+# evdi is not packaged in Fedora repos — build from source if desired:
+# https://github.com/DisplayLink/evdi
 ```
 
 3) Build:
