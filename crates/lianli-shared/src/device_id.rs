@@ -401,7 +401,6 @@ pub fn uses_hid(family: DeviceFamily) -> bool {
             | DeviceFamily::Galahad2Trinity
             | DeviceFamily::HydroShiftLcd
             | DeviceFamily::Galahad2Lcd
-            | DeviceFamily::UniversalScreenLighting
     )
 }
 
@@ -416,5 +415,6 @@ pub fn uses_usb_bulk(family: DeviceFamily) -> bool {
             | DeviceFamily::HydroShift2Lcd
             | DeviceFamily::Lancool207
             | DeviceFamily::UniversalScreen
+            | DeviceFamily::UniversalScreenLighting
     )
 }

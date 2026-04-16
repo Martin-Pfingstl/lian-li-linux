@@ -713,9 +713,53 @@ impl ServiceManager {
             }
         }
 
+        self.init_usb_bulk_rgb_devices(&mut wired_rgb);
+
         let arc = Arc::new(fan_devices);
         self.wired_fan_devices = Arc::clone(&arc);
         self.init_rgb_controller_from(wired_rgb);
+    }
+
+    fn init_usb_bulk_rgb_devices(
+        &mut self,
+        wired_rgb: &mut HashMap<String, Box<dyn lianli_devices::traits::RgbDevice>>,
+    ) {
+        let usb_devs = match enumerate_devices() {
+            Ok(devs) => devs,
+            Err(err) => {
+                warn!("Failed to enumerate USB devices for bulk RGB scan: {err}");
+                return;
+            }
+        };
+        for det in usb_devs {
+            let opener: Option<
+                fn(
+                    rusb::Device<rusb::GlobalContext>,
+                ) -> anyhow::Result<lianli_devices::winusb_led::WinUsbLedDevice>,
+            > = match det.family {
+                lianli_shared::device_id::DeviceFamily::UniversalScreenLighting => {
+                    Some(lianli_devices::universal_screen_lighting::open)
+                }
+                _ => None,
+            };
+            let Some(opener) = opener else { continue };
+
+            let device_id = Self::rusb_device_id(&det);
+            let device = rusb::Device::clone(&det.device);
+            match opener(device) {
+                Ok(ctrl) => {
+                    info!("Opened {} as RGB device: {device_id}", det.name);
+                    wired_rgb.insert(
+                        device_id,
+                        Box::new(ctrl) as Box<dyn lianli_devices::traits::RgbDevice>,
+                    );
+                }
+                Err(e) => warn!(
+                    "Failed to open {} ({:04x}:{:04x}): {e}",
+                    det.name, det.vid, det.pid
+                ),
+            }
+        }
     }
 
     /// Register fan + RGB from a unified controller set.

@@ -933,7 +933,7 @@ impl WirelessController {
                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
             ))?;
 
-        // Sequential 1-based index of bound devices (matches L-Connect's SyncPwm counter)
+        // Sequential 1-based index of bound devices
         let seq_index = devices
             .iter()
             .filter(|d| d.master_mac == master_mac && d.device_type != 0xFF)
