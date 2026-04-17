@@ -761,16 +761,21 @@ impl AioLcdRgbController {
     }
 
     fn send_rgb_command(&self, cmd: u8, data: &[u8]) -> Result<()> {
+        let max_payload = A_PACKET_SIZE - A_HEADER_LEN;
+        if data.len() > max_payload {
+            bail!(
+                "AIO LCD RGB: command {cmd:#04x} payload too large ({} > {max_payload})",
+                data.len()
+            );
+        }
         let mut pkt = [0u8; A_PACKET_SIZE];
         pkt[0] = REPORT_ID_A;
         pkt[1] = cmd;
         pkt[5] = data.len() as u8;
-        let copy_len = data.len().min(58);
-        pkt[A_HEADER_LEN..A_HEADER_LEN + copy_len].copy_from_slice(&data[..copy_len]);
+        pkt[A_HEADER_LEN..A_HEADER_LEN + data.len()].copy_from_slice(data);
 
         let mut dev = self.device.lock();
         dev.write(&pkt).context("AIO LCD RGB: write")?;
-        // Command does not sent a response, as such finished
         Ok(())
     }
 }

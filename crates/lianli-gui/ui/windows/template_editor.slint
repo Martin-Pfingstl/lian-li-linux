@@ -330,8 +330,8 @@ export component TemplateEditorWindow inherits Window {
                     mouse-cursor: ew-resize;
                     property <length> drag-start-width: 0px;
 
-                    pointer-event(ev) => {
-                        if (ev.button == PointerEventButton.left && ev.kind == PointerEventKind.down) {
+                    changed pressed => {
+                        if (self.pressed) {
                             self.drag-start-width = root.right-width;
                         }
                     }
