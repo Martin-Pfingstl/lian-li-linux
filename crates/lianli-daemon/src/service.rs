@@ -1395,6 +1395,8 @@ impl ServiceManager {
                 warn!("Device {device_id} not found in cached devices");
             }
         }
+
+        self.schedule_post_switch_refresh();
     }
 
     fn handle_display_switch_to_lcd(&mut self, device_id: &str, pid: u16) {
@@ -1408,6 +1410,24 @@ impl ServiceManager {
             },
             Err(e) => warn!("Failed to open HID for switch-to-LCD: {e:#}"),
         }
+
+        self.schedule_post_switch_refresh();
+    }
+
+    /// Wake the USB cache + device poll a few times in the seconds following a
+    /// mode switch, so the rebooted device shows up without waiting for the
+    /// next 10-second enumeration tick.
+    fn schedule_post_switch_refresh(&self) {
+        let Some(tx) = self.tx.clone() else { return };
+        thread::spawn(move || {
+            for delay_secs in [3u64, 3, 3] {
+                thread::sleep(Duration::from_secs(delay_secs));
+                if tx.send(DaemonEvent::USBCheck).is_err() {
+                    return;
+                }
+                let _ = tx.send(DaemonEvent::DevicePoll);
+            }
+        });
     }
 
     fn mark_mode_switch(&mut self, device_id: &str) {
