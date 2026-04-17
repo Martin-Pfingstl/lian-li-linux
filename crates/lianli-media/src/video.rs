@@ -8,6 +8,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 use tempfile::TempDir;
+use tracing::{debug, info};
 
 pub fn build_video_frames(
     path: &Path,
@@ -173,44 +174,182 @@ pub fn encode_h264(
     }
     let vf = vf_parts.join(",");
 
-    let status = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-loglevel",
-            "error",
-            "-stream_loop",
-            "-1",
-            "-i",
-            input.to_str().unwrap(),
-            "-t",
-            "30",
-            "-vf",
-            &vf,
-            "-r",
-            &fps.to_string(),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-tune",
-            "zerolatency",
-            "-pix_fmt",
-            "yuv420p",
-            "-an",
-            "-f",
-            "h264",
-            output.to_str().unwrap(),
-        ])
-        .status()
-        .map_err(MediaError::Io)?;
+    let fps_int = fps.round().max(1.0) as u32;
+    let (out_w, out_h) = target_dimensions(screen, orientation);
+    let bitrate = (out_w as u64 * out_h as u64 * fps_int as u64 / 4).max(1_000_000);
+    let bitrate_str = format!("{bitrate}");
+    let fps_str = fps_int.to_string();
 
-    if !status.success() {
-        return Err(MediaError::Ffmpeg(format!(
-            "ffmpeg h264 encode exited with status {status}"
-        )));
+    let encoders: &[EncoderKind] = if hw_video_disabled() {
+        &[EncoderKind::Libx264]
+    } else {
+        &[
+            EncoderKind::Nvenc,
+            EncoderKind::Amf,
+            EncoderKind::Vaapi,
+            EncoderKind::Qsv,
+            EncoderKind::Libx264,
+        ]
+    };
+
+    let mut last_stderr: Option<String> = None;
+    for kind in encoders {
+        match run_encode(input, &vf, &fps_str, &bitrate_str, *kind, &output) {
+            Ok(()) => {
+                info!(
+                    "LCD H.264 transcode: {out_w}x{out_h}@{fps_int}fps via {}",
+                    kind.name()
+                );
+                return Ok((output, temp));
+            }
+            Err(stderr) => {
+                debug!("LCD H.264 encoder {} unavailable: {stderr}", kind.name());
+                last_stderr = Some(stderr);
+            }
+        }
     }
 
-    Ok((output, temp))
+    Err(MediaError::Ffmpeg(format!(
+        "all H.264 encoders failed; last error: {}",
+        last_stderr.unwrap_or_default()
+    )))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EncoderKind {
+    Nvenc,
+    Amf,
+    Vaapi,
+    Qsv,
+    Libx264,
+}
+
+impl EncoderKind {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Nvenc => "h264_nvenc",
+            Self::Amf => "h264_amf",
+            Self::Vaapi => "h264_vaapi",
+            Self::Qsv => "h264_qsv",
+            Self::Libx264 => "libx264",
+        }
+    }
+}
+
+fn hw_video_disabled() -> bool {
+    std::env::var("LIANLI_DISABLE_HW_VIDEO")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
+}
+
+fn run_encode(
+    input: &Path,
+    vf: &str,
+    fps_str: &str,
+    bitrate_str: &str,
+    kind: EncoderKind,
+    output: &Path,
+) -> Result<(), String> {
+    let mut args: Vec<String> = vec!["-y".into(), "-loglevel".into(), "error".into()];
+
+    // Pre-input device init / hwaccel flags (encoder-specific).
+    match kind {
+        EncoderKind::Vaapi => {
+            args.extend([
+                "-vaapi_device".into(),
+                "/dev/dri/renderD128".into(),
+                "-hwaccel".into(),
+                "vaapi".into(),
+            ]);
+        }
+        EncoderKind::Qsv => {
+            args.extend([
+                "-init_hw_device".into(),
+                "qsv=qsv".into(),
+                "-filter_hw_device".into(),
+                "qsv".into(),
+                "-hwaccel".into(),
+                "qsv".into(),
+            ]);
+        }
+        _ => {
+            if !hw_video_disabled() {
+                args.extend(["-hwaccel".into(), "auto".into()]);
+            }
+        }
+    }
+
+    args.extend(["-i".into(), input.to_string_lossy().into_owned()]);
+
+    // VAAPI/QSV need the filter chain to end by uploading NV12 frames to GPU surfaces.
+    let vf_final: String = match kind {
+        EncoderKind::Vaapi => format!("{vf},format=nv12,hwupload"),
+        EncoderKind::Qsv => format!("{vf},format=nv12,hwupload=extra_hw_frames=16"),
+        _ => vf.to_string(),
+    };
+    args.extend(["-vf".into(), vf_final]);
+    args.extend(["-r".into(), fps_str.into()]);
+    args.extend(["-c:v".into(), kind.name().into()]);
+    args.extend(["-b:v".into(), bitrate_str.into()]);
+
+    match kind {
+        EncoderKind::Nvenc => {
+            args.extend(["-preset".into(), "p1".into()]);
+            args.extend(["-tune".into(), "ll".into()]);
+            args.extend(["-rc".into(), "vbr".into()]);
+        }
+        EncoderKind::Amf => {
+            args.extend(["-usage".into(), "lowlatency".into()]);
+            args.extend(["-quality".into(), "speed".into()]);
+        }
+        EncoderKind::Vaapi => {
+            args.extend(["-rc_mode".into(), "VBR".into()]);
+        }
+        EncoderKind::Qsv => {
+            args.extend(["-preset".into(), "veryfast".into()]);
+            args.extend(["-look_ahead".into(), "0".into()]);
+        }
+        EncoderKind::Libx264 => {
+            args.extend(["-preset".into(), "ultrafast".into()]);
+            args.extend(["-x264-params".into(), "bframes=0:no-scenecut=1".into()]);
+        }
+    }
+
+    // -pix_fmt only applies to the software-output encoders; VAAPI/QSV write
+    // GPU surfaces described by the filter chain above.
+    if !matches!(kind, EncoderKind::Vaapi | EncoderKind::Qsv) {
+        args.extend(["-pix_fmt".into(), "yuv420p".into()]);
+    }
+
+    args.extend([
+        "-an".into(),
+        "-t".into(),
+        "30".into(),
+        "-f".into(),
+        "h264".into(),
+        output.to_string_lossy().into_owned(),
+    ]);
+
+    let output_result = Command::new("ffmpeg")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("spawn ffmpeg: {e}"))?;
+    if output_result.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output_result.stderr);
+        Err(stderr.trim().to_string())
+    }
+}
+
+fn target_dimensions(screen: &ScreenInfo, orientation: f32) -> (u32, u32) {
+    let (rw, rh) = render_dimensions(screen, orientation);
+    let rot = (orientation % 360.0 + 360.0) % 360.0;
+    if (rot - 90.0).abs() < 1.0 || (rot - 270.0).abs() < 1.0 {
+        (rh, rw)
+    } else {
+        (rw, rh)
+    }
 }
 
 fn run_ffmpeg(

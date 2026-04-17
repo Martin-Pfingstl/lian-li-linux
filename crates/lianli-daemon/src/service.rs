@@ -1054,14 +1054,6 @@ impl ServiceManager {
         let all_sensors = lianli_shared::sensors::enumerate_sensors();
         let user_templates = self.ipc_state.lock().user_templates.clone();
 
-        // Cache previous assets by their content key so reloads that don't
-        // change a given LCD's config can reuse already-prepared media (videos
-        // are particularly expensive — ffmpeg can take ~10s).
-        let prev_by_key: HashMap<ConfigKey, Arc<MediaAsset>> = self
-            .media_assets
-            .values()
-            .map(|a| (a.config_key.clone(), Arc::clone(a)))
-            .collect();
         self.media_assets.clear();
 
         if let Some(cfg) = &self.config {
@@ -1073,15 +1065,6 @@ impl ServiceManager {
                     .unwrap_or(ScreenInfo::WIRELESS_LCD);
                 let cfg_key = asset_cache_key(device, &user_templates, &all_sensors);
                 let device_id = device.device_id();
-
-                if let Some(existing) = prev_by_key.get(&cfg_key) {
-                    self.media_assets.insert(idx, Arc::clone(existing));
-                    tx.send(DaemonEvent::FrameFinished {
-                        asset: Arc::clone(existing),
-                    })
-                    .ok();
-                    continue;
-                }
 
                 match prepare_media_asset(
                     device,

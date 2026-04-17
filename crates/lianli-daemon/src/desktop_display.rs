@@ -28,6 +28,7 @@ fn ensure_ffmpeg_initialized() {
         if let Err(e) = ffmpeg::init() {
             error!("ffmpeg::init failed: {e}");
         }
+        ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Error);
     });
 }
 
