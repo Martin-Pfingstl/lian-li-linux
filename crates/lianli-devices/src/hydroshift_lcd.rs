@@ -39,9 +39,15 @@ const C_MAX_PAYLOAD: usize = C_PACKET_SIZE - C_HEADER_LEN; // 501
 const READ_TIMEOUT_MS: i32 = 1000;
 const INIT_READ_TIMEOUT_MS: i32 = 3000;
 
-// A-Commands
+// List of all known A-Commands. Currently not used A-Commands are prefixed by _
 const CMD_HANDSHAKE: u8 = 0x81;
+// 0x82 might be CMD_GET_PUMP_LIGHT
+const CMD_SET_PUMP_LIGHT: u8 = 0x83;
+const _CMD_GET_FANLIGHT_INFO: u8 = 0x84;
+const CMD_SET_FAN_LIGHT: u8 = 0x85;
 const CMD_GET_FIRMWARE: u8 = 0x86;
+const _CMD_GET_SERIAL_NUMBER: u8 = 0x88;
+const _CMD_SET_SERIAL_NUMBER: u8 = 0x89;
 const CMD_SET_PUMP_PWM: u8 = 0x8A;
 const CMD_SET_FAN_PWM: u8 = 0x8B;
 
@@ -180,7 +186,7 @@ impl HydroShiftLcdController {
         match self.read_firmware_internal(INIT_READ_TIMEOUT_MS) {
             Ok(fw) => {
                 if let Some(ver) = parse_firmware_version(&fw) {
-                    if ver > (1, 2) {
+                    if ver > (1, 3) {
                         info!("  Firmware: {fw} (using 512-byte frame mode)");
                         self.use_c_command = true;
                     } else {
@@ -241,8 +247,8 @@ impl HydroShiftLcdController {
         };
 
         debug!(
-            "Handshake: fan={}rpm pump={}rpm temp={:.1}°C",
-            hs.fan_rpm, hs.pump_rpm, hs.coolant_temp
+            "Handshake: fan={}rpm pump={}rpm temp_valid={} temp={:.1}°C",
+            hs.fan_rpm, hs.pump_rpm, hs.temp_valid, hs.coolant_temp
         );
         self.last_handshake = Some(hs.clone());
         Ok(hs)
@@ -297,15 +303,40 @@ impl HydroShiftLcdController {
         Ok(data_len == 1 && buf[B_HEADER_LEN] == 0)
     }
 
-    /// Reset device (A-command 0x8E). Returns true on success.
+    /// Reset device (A-command 0x8E). Device may emit a transient status byte `2`
+    /// before the final `1` — both must be drained.
     pub fn reset_device(&self) -> bool {
-        match self.send_a_command(CMD_RESET_DEVICE, &[], READ_TIMEOUT_MS) {
-            Ok(resp) if resp.len() > A_HEADER_LEN && resp[1] == CMD_RESET_DEVICE => {
-                let data_len = resp[5] as usize;
-                data_len == 1 && resp[A_HEADER_LEN] == 1
-            }
-            _ => false,
+        const MAX_ATTEMPTS: u32 = 20;
+
+        let mut dev = self.device.lock();
+        if let Err(e) = self.write_a_command_internal(&mut *dev, CMD_RESET_DEVICE, &[]) {
+            warn!("AIO LCD: reset device failed: {e}");
+            return false;
         }
+
+        let mut buf = [0u8; A_PACKET_SIZE];
+        for _ in 0..MAX_ATTEMPTS {
+            let n = match dev.read_timeout(&mut buf, 1000) {
+                Ok(n) => n,
+                Err(e) => {
+                    warn!("AIO LCD: reset device read failed: {e}");
+                    return false;
+                }
+            };
+            if n == 0 {
+                warn!("AIO LCD: reset device timed out");
+                return false;
+            }
+            if n > A_HEADER_LEN && buf[1] == CMD_RESET_DEVICE {
+                match buf[A_HEADER_LEN] {
+                    1 => return true,
+                    2 => continue,
+                    _ => {}
+                }
+            }
+        }
+        warn!("AIO LCD: reset device did not converge after {MAX_ATTEMPTS} reads");
+        false
     }
 
     /// Check LCD availability and attempt recovery if unavailable.
@@ -337,11 +368,7 @@ impl HydroShiftLcdController {
     fn read_firmware_internal(&self, timeout_ms: i32) -> Result<String> {
         let mut dev = self.device.lock();
 
-        let mut pkt = [0u8; A_PACKET_SIZE];
-        pkt[0] = REPORT_ID_A;
-        pkt[1] = CMD_GET_FIRMWARE;
-        let written = dev.write(&pkt).context("AIO LCD: write firmware request")?;
-        debug!("firmware request: wrote {written} bytes");
+        self.write_a_command_internal(&mut *dev, CMD_GET_FIRMWARE, &[])?;
 
         // Loop reading until we get a firmware response, discarding stale responses
         // from a previous session (e.g. 0x81 handshake, 0x8E reset) as they arrive.
@@ -383,19 +410,8 @@ impl HydroShiftLcdController {
     }
 
     fn send_a_command(&self, cmd: u8, data: &[u8], timeout_ms: i32) -> Result<Vec<u8>> {
-        let mut pkt = [0u8; A_PACKET_SIZE];
-        pkt[0] = REPORT_ID_A;
-        pkt[1] = cmd;
-        pkt[5] = data.len() as u8;
-        let copy_len = data.len().min(58);
-        pkt[A_HEADER_LEN..A_HEADER_LEN + copy_len].copy_from_slice(&data[..copy_len]);
-
         let mut dev = self.device.lock();
-        let written = dev.write(&pkt).context("AIO LCD: write A-command")?;
-        debug!(
-            "A-cmd {cmd:#04x}: wrote {written} bytes, payload={:02x?}",
-            &data[..copy_len]
-        );
+        self.write_a_command_internal(&mut *dev, cmd, data)?;
 
         let mut buf = [0u8; A_PACKET_SIZE];
         let n = dev
@@ -412,6 +428,36 @@ impl HydroShiftLcdController {
         }
 
         Ok(buf[..n].to_vec())
+    }
+
+    /// General write_a_command method in case self.device is not locked:
+    /// It writes an A-Command
+    /// It locks the HidBackend and frees it afterwards. Do NOT call this method if the device is already locked!
+    pub fn write_a_command(&self, cmd: u8, data: &[u8]) -> Result<()> {
+        let mut dev = self.device.lock();
+        self.write_a_command_internal(&mut *dev, cmd, data)
+    }
+
+    fn write_a_command_internal(&self, dev: &mut HidBackend, cmd: u8, data: &[u8]) -> Result<()> {
+        let max_payload = A_PACKET_SIZE - A_HEADER_LEN;
+        if data.len() > max_payload {
+            bail!(
+                "AIO LCD: A-command {cmd:#04x} payload too large ({} > {max_payload})",
+                data.len()
+            );
+        }
+        let mut pkt = [0u8; A_PACKET_SIZE];
+        pkt[0] = REPORT_ID_A;
+        pkt[1] = cmd;
+        pkt[5] = data.len() as u8;
+        pkt[A_HEADER_LEN..A_HEADER_LEN + data.len()].copy_from_slice(data);
+
+        let written = dev.write(&pkt).context("AIO LCD: write A-command")?;
+        debug!(
+            "A-cmd {cmd:#04x}: wrote {written} bytes, payload={:02x?}",
+            data
+        );
+        Ok(())
     }
 
     fn send_b_command(&self, cmd: u8, data: &[u8]) -> Result<()> {
@@ -456,18 +502,20 @@ impl HydroShiftLcdController {
                 break;
             }
         }
-
-        let mut buf = [0u8; 512];
-        let _ = dev.read_timeout(&mut buf, 20);
+        // command does not send any response, as such, finished.
 
         Ok(())
     }
 }
 
+fn duty_to_percent(duty: u8) -> u8 {
+    ((duty as u32 * 100) / 255) as u8
+}
+
 impl FanDevice for HydroShiftLcdController {
     fn set_fan_speed(&self, _slot: u8, duty: u8) -> Result<()> {
-        let pwm = duty.min(100);
-        self.send_a_command(CMD_SET_FAN_PWM, &[0x00, pwm], READ_TIMEOUT_MS)?;
+        let pwm = duty_to_percent(duty);
+        self.write_a_command(CMD_SET_FAN_PWM, &[0x00, pwm])?;
         debug!("Set fan PWM to {pwm}%");
         Ok(())
     }
@@ -496,8 +544,8 @@ impl FanDevice for HydroShiftLcdController {
     }
 
     fn set_pump_speed(&self, duty: u8) -> Result<()> {
-        let pwm = duty.min(100);
-        self.send_a_command(CMD_SET_PUMP_PWM, &[0x00, pwm], READ_TIMEOUT_MS)?;
+        let pwm = duty_to_percent(duty);
+        self.write_a_command(CMD_SET_PUMP_PWM, &[0x00, pwm])?;
         debug!("Set pump PWM to {pwm}%");
         Ok(())
     }
@@ -644,8 +692,6 @@ fn parse_firmware_version(fw: &str) -> Option<(u32, u32)> {
     None
 }
 
-const CMD_SET_PUMP_LIGHT: u8 = 0x83;
-const CMD_SET_FAN_LIGHT: u8 = 0x85;
 const FAN_LED_COUNT: u16 = 24;
 
 pub struct AioLcdRgbController {
@@ -714,25 +760,23 @@ impl AioLcdRgbController {
         Ok(())
     }
 
-    fn send_rgb_command(&self, cmd: u8, data: &[u8]) -> Result<Vec<u8>> {
+    fn send_rgb_command(&self, cmd: u8, data: &[u8]) -> Result<()> {
+        let max_payload = A_PACKET_SIZE - A_HEADER_LEN;
+        if data.len() > max_payload {
+            bail!(
+                "AIO LCD RGB: command {cmd:#04x} payload too large ({} > {max_payload})",
+                data.len()
+            );
+        }
         let mut pkt = [0u8; A_PACKET_SIZE];
         pkt[0] = REPORT_ID_A;
         pkt[1] = cmd;
         pkt[5] = data.len() as u8;
-        let copy_len = data.len().min(58);
-        pkt[A_HEADER_LEN..A_HEADER_LEN + copy_len].copy_from_slice(&data[..copy_len]);
+        pkt[A_HEADER_LEN..A_HEADER_LEN + data.len()].copy_from_slice(data);
 
         let mut dev = self.device.lock();
         dev.write(&pkt).context("AIO LCD RGB: write")?;
-
-        let mut buf = [0u8; A_PACKET_SIZE];
-        let n = dev
-            .read_timeout(&mut buf, READ_TIMEOUT_MS)
-            .context("AIO LCD RGB: read")?;
-        if n == 0 {
-            bail!("AIO LCD RGB: no response to {cmd:#04x}");
-        }
-        Ok(buf[..n].to_vec())
+        Ok(())
     }
 }
 

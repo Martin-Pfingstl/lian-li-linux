@@ -131,7 +131,7 @@ impl SysSensor {
                 }
             }
 
-            let sleep_dur = Duration::from_millis(333).saturating_sub(start_time.elapsed());
+            let sleep_dur = Duration::from_millis(100).saturating_sub(start_time.elapsed());
 
             thread::sleep(sleep_dur);
         }

@@ -19,6 +19,7 @@ export component TemplateEditorWindow inherits Window {
     background: Palette.background;
     icon: @image-url("../../../../assets/icons/icon.png");
 
+    in-out property <length> right-width: 554px;
     in-out property <string> template-id: "";
     in-out property <string> template-name: "Untitled";
     in-out property <int> base-width: 480;
@@ -240,7 +241,7 @@ export component TemplateEditorWindow inherits Window {
 
         HorizontalLayout {
             Rectangle {
-                width: 220px;
+                width: 240px;
                 background: Theme.sidebar-background;
                 border-width: 0px;
                 border-color: Theme.border;
@@ -321,8 +322,35 @@ export component TemplateEditorWindow inherits Window {
                 }
             }
 
+            Rectangle {
+                width: 5px;
+                background: gray;
+
+                splitter-touch := TouchArea {
+                    mouse-cursor: ew-resize;
+                    property <length> drag-start-width: 0px;
+
+                    changed pressed => {
+                        if (self.pressed) {
+                            self.drag-start-width = root.right-width;
+                        }
+                    }
+
+                    moved => {
+                        if (self.pressed) {
+                            root.right-width = self.drag-start-width - (self.mouse-x - self.pressed-x);
+                            if (root.right-width < 554px) {
+                                root.right-width = 554px;
+                            } else if (root.right-width > root.width - 240px - 5px - 100px) {
+                                root.right-width = root.width - 240px - 5px - 100px;
+                            }
+                        }
+                    }
+                }
+            }
+
             PropertiesPanel {
-                width: 554px;
+                width: root.right-width;
                 selected-index: root.selected-index;
                 selected-widget: root.selected-widget;
                 selected-ranges: root.selected-ranges;
